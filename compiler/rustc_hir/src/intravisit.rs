@@ -1151,6 +1151,8 @@ pub fn walk_generic_param<'v, V: Visitor<'v>>(
                 try_visit!(visitor.visit_const_param_default(*hir_id, default));
             }
         }
+        // TypeCtor params have no associated type annotation or default to walk.
+        GenericParamKind::TypeCtor => {}
     }
     V::Result::output()
 }

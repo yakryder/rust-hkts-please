@@ -145,7 +145,7 @@ Additional sites touched:
 
 `./x build compiler/rustc_middle` passes.
 
-### Step 4: Add `TypeCtor` to HIR `GenericParamKind` ← NEXT
+### Step 4: Add `TypeCtor` to HIR `GenericParamKind` ✅ DONE
 
 File: `compiler/rustc_hir/src/hir.rs`
 
@@ -154,13 +154,22 @@ pub enum GenericParamKind<'hir> {
     Lifetime { kind: LifetimeParamKind },
     Type { default: Option<&'hir Ty<'hir>>, synthetic: bool },
     Const { ty: &'hir Ty<'hir>, default: Option<&'hir ConstArg<'hir>> },
-    TypeCtor,  // <-- add
+    TypeCtor,  // added
 }
 ```
 
-Fix match arms in `rustc_hir`. The pattern is the same: let the compiler list the sites, reason through each.
+Arm decisions:
+- `hir.rs` `expected_ty()` → `None` (TypeCtor has kind `* -> *`, not `*`, no Ty annotation)
+- `intravisit.rs` `walk_generic_param()` → do nothing (no children to walk)
+- `target.rs` — separate `target::GenericParamKind` enum also needed `TypeCtor`; `has_default: false`, strings `"type constructor parameter"` / `"type constructor parameters"`
 
-### Step 5: Add `TypeCtor` to AST `GenericParamKind`
+"Is this a type?" audit: `is_impl_trait()`, `is_elided_lifetime()`, `is_lifetime()` — all match specific variants, TypeCtor returns `false` on all. No silent fallthrough.
+
+Forward dependency: `rustc_hir_pretty/src/lib.rs:2455` — pretty-printer non-exhaustive match; will be fixed in next step.
+
+`./x build compiler/rustc_hir` passes. `./x build compiler/rustc_middle` fails at `rustc_hir_pretty` only.
+
+### Step 5: Add `TypeCtor` to AST `GenericParamKind` ← NEXT
 
 File: `compiler/rustc_ast/src/ast.rs`
 

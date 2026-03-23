@@ -831,6 +831,9 @@ pub enum GenericParamKind<'hir> {
         /// Optional default value for the const generic param
         default: Option<&'hir ConstArg<'hir>>,
     },
+    /// A type constructor parameter of kind `* -> *`, written `F<_>`.
+    /// Has no default and no associated type annotation.
+    TypeCtor,
 }
 
 #[derive(Debug, Clone, Copy, HashStable_Generic)]
@@ -4982,6 +4985,8 @@ impl<'hir> Node<'hir> {
                 GenericParamKind::Lifetime { .. } => None,
                 GenericParamKind::Type { default, .. } => default,
                 GenericParamKind::Const { ty, .. } => Some(ty),
+                // TypeCtor params carry no type annotation; they have kind `* -> *`, not `*`.
+                GenericParamKind::TypeCtor => None,
             },
             _ => None,
         }

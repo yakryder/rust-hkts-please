@@ -14,6 +14,8 @@ pub enum GenericParamKind {
     Type,
     Lifetime,
     Const,
+    /// A type constructor parameter of kind `* -> *`, written `F<_>`.
+    TypeCtor,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, HashStable_Generic)]
@@ -229,6 +231,10 @@ impl Target {
                 kind: GenericParamKind::Const,
                 has_default: default.is_some(),
             },
+            // TypeCtor params have no default; they cannot be defaulted at kind `* -> *`.
+            hir::GenericParamKind::TypeCtor => {
+                Target::GenericParam { kind: GenericParamKind::TypeCtor, has_default: false }
+            }
         }
     }
 
@@ -298,6 +304,7 @@ impl Target {
                 GenericParamKind::Type => "type parameter",
                 GenericParamKind::Lifetime => "lifetime parameter",
                 GenericParamKind::Const => "const parameter",
+                GenericParamKind::TypeCtor => "type constructor parameter",
             },
             Target::MacroDef => "macro def",
             Target::Param => "function param",
@@ -349,6 +356,7 @@ impl Target {
                 GenericParamKind::Type => "type parameters",
                 GenericParamKind::Lifetime => "lifetime parameters",
                 GenericParamKind::Const => "const parameters",
+                GenericParamKind::TypeCtor => "type constructor parameters",
             },
             Target::MacroDef => "macro defs",
             Target::Param => "function params",
