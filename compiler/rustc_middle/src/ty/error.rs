@@ -212,6 +212,7 @@ impl<'tcx> Ty<'tcx> {
             ty::Alias(ty::Projection | ty::Inherent, _) => "associated type".into(),
             ty::Alias(ty::Free, _) => "type alias".into(),
             ty::Param(_) => "type parameter".into(),
+            ty::Ctor(_, _) => "type constructor application".into(),
             ty::Alias(ty::Opaque, ..) => "opaque type".into(),
         }
     }

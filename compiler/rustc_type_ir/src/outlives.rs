@@ -204,7 +204,8 @@ impl<I: Interner> TypeVisitor<I> for OutlivesCollector<'_, I> {
             | ty::FnPtr(..)
             | ty::UnsafeBinder(_)
             | ty::Dynamic(_, _)
-            | ty::Tuple(_) => {
+            | ty::Tuple(_)
+            | ty::Ctor(_, _) => {
                 ty.super_visit_with(self);
             }
         }

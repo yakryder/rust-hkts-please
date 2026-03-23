@@ -88,6 +88,10 @@ fn push_inner<I: Interner>(stack: &mut TypeWalkerStack<I>, parent: I::GenericArg
             | ty::Bound(..)
             | ty::Foreign(..) => {}
 
+            ty::Ctor(_, ty) => {
+                stack.push(ty.into());
+            }
+
             ty::Pat(ty, pat) => {
                 push_ty_pat::<I>(stack, pat);
                 stack.push(ty.into());

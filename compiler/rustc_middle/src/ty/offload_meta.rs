@@ -113,7 +113,8 @@ impl MappingFlags {
             | ty::Bound(_, _)
             | ty::Placeholder(_)
             | ty::Infer(_)
-            | ty::Error(_) => {
+            | ty::Error(_)
+            | ty::Ctor(_, _) => {
                 tcx.dcx()
                     .span_err(rustc_span::DUMMY_SP, format!("type `{ty:?}` cannot be offloaded"));
                 MappingFlags::empty()

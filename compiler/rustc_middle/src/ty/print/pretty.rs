@@ -784,6 +784,12 @@ pub trait PrettyPrinter<'tcx>: Printer<'tcx> + fmt::Write {
             }
             ty::Error(_) => write!(self, "{{type error}}")?,
             ty::Param(ref param_ty) => param_ty.print(self)?,
+            ty::Ctor(ctor, inner_ty) => {
+                write!(self, "{}", ctor.name)?;
+                write!(self, "<")?;
+                inner_ty.print(self)?;
+                write!(self, ">")?;
+            }
             ty::Bound(debruijn, bound_ty) => match bound_ty.kind {
                 ty::BoundTyKind::Anon => {
                     rustc_type_ir::debug_bound_var(self, debruijn, bound_ty.var)?

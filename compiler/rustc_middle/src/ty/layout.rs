@@ -947,6 +947,7 @@ where
                 | ty::Bound(..)
                 | ty::Placeholder(..)
                 | ty::Param(_)
+                | ty::Ctor(_, _)
                 | ty::Infer(_)
                 | ty::Error(_) => bug!("TyAndLayout::field: unexpected type `{}`", this.ty),
             }

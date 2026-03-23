@@ -19,8 +19,8 @@ use crate::traits::solve::{
     self, CanonicalInput, ExternalConstraints, ExternalConstraintsData, QueryResult, inspect,
 };
 use crate::ty::{
-    self, Clause, Const, List, ParamTy, Pattern, PolyExistentialPredicate, Predicate, Region, Ty,
-    TyCtxt,
+    self, Clause, Const, List, ParamCtor, ParamTy, Pattern, PolyExistentialPredicate, Predicate,
+    Region, Ty, TyCtxt,
 };
 
 #[allow(rustc::usage_of_ty_tykind)]
@@ -82,6 +82,7 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
 
     type FnInputTys = &'tcx [Ty<'tcx>];
     type ParamTy = ParamTy;
+    type ParamCtor = ParamCtor;
     type Symbol = Symbol;
 
     type ErrorGuaranteed = ErrorGuaranteed;
@@ -587,7 +588,7 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
             //
             // Impls which apply to an alias after normalization are handled by
             // `assemble_candidates_after_normalizing_self_ty`.
-            ty::Alias(_, _) | ty::Placeholder(..) | ty::Error(_) => (),
+            ty::Alias(_, _) | ty::Placeholder(..) | ty::Error(_) | ty::Ctor(_, _) => (),
 
             // FIXME: These should ideally not exist as a self type. It would be nice for
             // the builtin auto trait impls of coroutines to instead directly recurse

@@ -151,6 +151,10 @@ pub fn simplify_type<I: Interner>(
             TreatParams::AsRigid => Some(SimplifiedType::Placeholder),
             TreatParams::InstantiateWithInfer => None,
         },
+        ty::Ctor(_, _) => match treat_params {
+            TreatParams::AsRigid => Some(SimplifiedType::Placeholder),
+            TreatParams::InstantiateWithInfer => None,
+        },
         ty::Alias(..) => match treat_params {
             // When treating `ty::Param` as a placeholder, projections also
             // don't unify with anything else as long as they are fully normalized.
@@ -276,7 +280,7 @@ impl<I: Interner, const INSTANTIATE_LHS_WITH_INFER: bool, const INSTANTIATE_RHS_
         match rhs.kind() {
             // Start by checking whether the `rhs` type may unify with
             // pretty much everything. Just return `true` in that case.
-            ty::Param(_) => {
+            ty::Param(_) | ty::Ctor(_, _) => {
                 if INSTANTIATE_RHS_WITH_INFER {
                     return true;
                 }
@@ -472,6 +476,17 @@ impl<I: Interner, const INSTANTIATE_LHS_WITH_INFER: bool, const INSTANTIATE_RHS_
                 }
                 _ => false,
             },
+
+            ty::Ctor(lhs_ctor, lhs_ty) => {
+                INSTANTIATE_LHS_WITH_INFER
+                    || match rhs.kind() {
+                        ty::Ctor(rhs_ctor, rhs_ty) => {
+                            lhs_ctor == rhs_ctor
+                                && self.types_may_unify_inner(lhs_ty, rhs_ty, depth)
+                        }
+                        _ => false,
+                    }
+            }
 
             ty::Error(..) => true,
         }

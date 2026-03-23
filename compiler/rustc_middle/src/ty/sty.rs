@@ -303,6 +303,29 @@ impl<'tcx> ParamTy {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
+#[derive(HashStable)]
+pub struct ParamCtor {
+    pub index: u32,
+    pub name: Symbol,
+}
+
+impl rustc_type_ir::inherent::ParamLike for ParamCtor {
+    fn index(self) -> u32 {
+        self.index
+    }
+}
+
+impl ParamCtor {
+    pub fn new(index: u32, name: Symbol) -> ParamCtor {
+        ParamCtor { index, name }
+    }
+
+    pub fn for_def(def: &ty::GenericParamDef) -> ParamCtor {
+        ParamCtor::new(def.index, def.name)
+    }
+}
+
 #[derive(Copy, Clone, Hash, TyEncodable, TyDecodable, Eq, PartialEq, Ord, PartialOrd)]
 #[derive(HashStable)]
 pub struct ParamConst {
@@ -1661,7 +1684,7 @@ impl<'tcx> Ty<'tcx> {
             ty::Adt(adt, _) if adt.is_enum() => adt.repr().discr_type().to_ty(tcx),
             ty::Coroutine(_, args) => args.as_coroutine().discr_ty(tcx),
 
-            ty::Param(_) | ty::Alias(..) | ty::Infer(ty::TyVar(_)) => {
+            ty::Param(_) | ty::Alias(..) | ty::Infer(ty::TyVar(_)) | ty::Ctor(_, _) => {
                 let assoc_items = tcx.associated_item_def_ids(
                     tcx.require_lang_item(hir::LangItem::DiscriminantKind, DUMMY_SP),
                 );
@@ -1747,7 +1770,7 @@ impl<'tcx> Ty<'tcx> {
 
             // We don't know the metadata of `self`, but it must be equal to the
             // metadata of `tail`.
-            ty::Param(_) | ty::Alias(..) => Err(tail),
+            ty::Param(_) | ty::Alias(..) | ty::Ctor(_, _) => Err(tail),
 
             | ty::UnsafeBinder(_) => todo!("FIXME(unsafe_binder)"),
 
@@ -1937,7 +1960,7 @@ impl<'tcx> Ty<'tcx> {
                 .sizedness_constraint(tcx, sizedness)
                 .is_none_or(|ty| ty.instantiate(tcx, args).has_trivial_sizedness(tcx, sizedness)),
 
-            ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) | ty::Bound(..) => false,
+            ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) | ty::Bound(..) | ty::Ctor(_, _) => false,
 
             ty::Infer(ty::TyVar(_)) => false,
 
@@ -2000,7 +2023,8 @@ impl<'tcx> Ty<'tcx> {
             // Needs normalization or revealing to determine, so no is the safe answer.
             ty::Alias(..) => false,
 
-            ty::Param(..) | ty::Placeholder(..) | ty::Bound(..) | ty::Infer(..) | ty::Error(..) => {
+            ty::Param(..) | ty::Placeholder(..) | ty::Bound(..) | ty::Infer(..) | ty::Error(..)
+            | ty::Ctor(_, _) => {
                 false
             }
         }
@@ -2048,6 +2072,7 @@ impl<'tcx> Ty<'tcx> {
             | ty::Coroutine(..)
             | ty::CoroutineWitness(..)
             | ty::Alias(..)
+            | ty::Ctor(_, _)
             | ty::Error(_) => false,
         }
     }

@@ -103,6 +103,12 @@ impl fmt::Debug for ty::ParamConst {
     }
 }
 
+impl fmt::Debug for ty::ParamCtor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/#{}", self.name, self.index)
+    }
+}
+
 impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.kind())
@@ -260,6 +266,7 @@ TrivialTypeTraversalImpls! {
 TrivialTypeTraversalAndLiftImpls! {
     // tidy-alphabetical-start
     crate::mir::RuntimeChecks,
+    crate::ty::ParamCtor,
     crate::ty::ParamTy,
     crate::ty::instance::ReifyReason,
     rustc_hir::def_id::DefId,
@@ -368,6 +375,7 @@ impl<'tcx> TypeSuperFoldable<TyCtxt<'tcx>> for Ty<'tcx> {
             }
             ty::Alias(kind, data) => ty::Alias(kind, data.try_fold_with(folder)?),
             ty::Pat(ty, pat) => ty::Pat(ty.try_fold_with(folder)?, pat.try_fold_with(folder)?),
+            ty::Ctor(ctor, ty) => ty::Ctor(ctor, ty.try_fold_with(folder)?),
 
             ty::Bool
             | ty::Char
@@ -407,6 +415,7 @@ impl<'tcx> TypeSuperFoldable<TyCtxt<'tcx>> for Ty<'tcx> {
             ty::CoroutineClosure(did, args) => ty::CoroutineClosure(did, args.fold_with(folder)),
             ty::Alias(kind, data) => ty::Alias(kind, data.fold_with(folder)),
             ty::Pat(ty, pat) => ty::Pat(ty.fold_with(folder), pat.fold_with(folder)),
+            ty::Ctor(ctor, ty) => ty::Ctor(ctor, ty.fold_with(folder)),
 
             ty::Bool
             | ty::Char
@@ -454,6 +463,7 @@ impl<'tcx> TypeSuperVisitable<TyCtxt<'tcx>> for Ty<'tcx> {
             ty::Closure(_did, args) => args.visit_with(visitor),
             ty::CoroutineClosure(_did, args) => args.visit_with(visitor),
             ty::Alias(_, data) => data.visit_with(visitor),
+            ty::Ctor(_, ty) => ty.visit_with(visitor),
 
             ty::Pat(ty, pat) => {
                 try_visit!(ty.visit_with(visitor));

@@ -124,6 +124,8 @@ pub trait Interner:
     type Tys: Tys<Self>;
     type FnInputTys: Copy + Debug + Hash + Eq + SliceLike<Item = Self::Ty> + TypeVisitable<Self>;
     type ParamTy: ParamLike;
+    /// A type constructor parameter, e.g. `F` in `fn foo<F<_>, A>(x: F<A>)`.
+    type ParamCtor: ParamLike;
     type Symbol: Symbol<Self>;
 
     // Things stored inside of tys

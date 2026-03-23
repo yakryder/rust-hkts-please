@@ -227,6 +227,11 @@ pub enum TyKind<I: Interner> {
     /// A type parameter; for example, `T` in `fn f<T>(x: T) {}`.
     Param(I::ParamTy),
 
+    /// Application of a type constructor parameter to a type argument.
+    /// Represents `F<A>` where `F` is declared as a type constructor parameter `F<_>`.
+    /// For example, `F<A>` in `fn fmap<F<_>, A, B>(fa: F<A>, f: fn(A) -> B) -> F<B>`.
+    Ctor(I::ParamCtor, I::Ty),
+
     /// Bound type variable, used to represent the `'a` in `for<'a> fn(&'a ())`.
     ///
     /// For canonical queries, we replace inference variables with bound variables,
@@ -329,6 +334,7 @@ impl<I: Interner> TyKind<I> {
             | ty::Infer(_)
             | ty::Alias(_, _)
             | ty::Param(_)
+            | ty::Ctor(_, _)
             | ty::Bound(_, _)
             | ty::Placeholder(_) => false,
         }
@@ -394,6 +400,7 @@ impl<I: Interner> fmt::Debug for TyKind<I> {
             }
             Alias(i, a) => f.debug_tuple("Alias").field(i).field(&a).finish(),
             Param(p) => write!(f, "{p:?}"),
+            Ctor(ctor, ty) => write!(f, "{ctor:?}<{ty:?}>"),
             Bound(d, b) => crate::debug_bound_var(f, *d, b),
             Placeholder(p) => write!(f, "{p:?}"),
             Infer(t) => write!(f, "{:?}", t),
