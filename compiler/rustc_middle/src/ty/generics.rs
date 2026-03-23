@@ -14,6 +14,7 @@ pub enum GenericParamDefKind {
     Lifetime,
     Type { has_default: bool, synthetic: bool },
     Const { has_default: bool },
+    TypeCtor, // F<_> parameter of kind * -> *
 }
 
 impl GenericParamDefKind {
@@ -22,21 +23,24 @@ impl GenericParamDefKind {
             GenericParamDefKind::Lifetime => "lifetime",
             GenericParamDefKind::Type { .. } => "type",
             GenericParamDefKind::Const { .. } => "constant",
+            GenericParamDefKind::TypeCtor => "type constructor",
         }
     }
     pub fn to_ord(&self) -> ast::ParamKindOrd {
         match self {
             GenericParamDefKind::Lifetime => ast::ParamKindOrd::Lifetime,
-            GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
-                ast::ParamKindOrd::TypeOrConst
-            }
+            GenericParamDefKind::Type { .. }
+            | GenericParamDefKind::Const { .. }
+            | GenericParamDefKind::TypeCtor => ast::ParamKindOrd::TypeOrConst,
         }
     }
 
     pub fn is_ty_or_const(&self) -> bool {
         match self {
             GenericParamDefKind::Lifetime => false,
-            GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => true,
+            GenericParamDefKind::Type { .. }
+            | GenericParamDefKind::Const { .. }
+            | GenericParamDefKind::TypeCtor => true,
         }
     }
 
@@ -98,6 +102,9 @@ impl GenericParamDef {
             ty::GenericParamDefKind::Lifetime => ty::Region::new_error_misc(tcx).into(),
             ty::GenericParamDefKind::Type { .. } => Ty::new_misc_error(tcx).into(),
             ty::GenericParamDefKind::Const { .. } => ty::Const::new_misc_error(tcx).into(),
+            // No GenericArgKind::Ctor yet (Step 8); use a type error as a placeholder
+            // so error recovery code doesn't panic.
+            ty::GenericParamDefKind::TypeCtor => Ty::new_misc_error(tcx).into(),
         }
     }
 }
@@ -166,6 +173,9 @@ impl<'tcx> Generics {
                 GenericParamDefKind::Lifetime => own_counts.lifetimes += 1,
                 GenericParamDefKind::Type { .. } => own_counts.types += 1,
                 GenericParamDefKind::Const { .. } => own_counts.consts += 1,
+                // TypeCtor has no dedicated counter in GenericParamCount yet; count
+                // via own_params.len() is sufficient for the MVP.
+                GenericParamDefKind::TypeCtor => {}
             }
         }
 
@@ -184,6 +194,8 @@ impl<'tcx> Generics {
                 GenericParamDefKind::Const { has_default, .. } => {
                     own_defaults.consts += has_default as usize;
                 }
+                // TypeCtor has no defaults.
+                GenericParamDefKind::TypeCtor => {}
             }
         }
 
@@ -206,7 +218,9 @@ impl<'tcx> Generics {
     pub fn own_requires_monomorphization(&self) -> bool {
         for param in &self.own_params {
             match param.kind {
-                GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
+                GenericParamDefKind::Type { .. }
+                | GenericParamDefKind::Const { .. }
+                | GenericParamDefKind::TypeCtor => {
                     return true;
                 }
                 GenericParamDefKind::Lifetime => {}

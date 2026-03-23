@@ -460,6 +460,9 @@ impl<'tcx> Instance<'tcx> {
             ty::GenericParamDefKind::Const { .. } => {
                 bug!("Instance::mono: {:?} has const parameters", def_id)
             }
+            ty::GenericParamDefKind::TypeCtor => {
+                bug!("Instance::mono: {:?} has type constructor parameters", def_id)
+            }
         });
 
         Instance::new_raw(def_id, args)

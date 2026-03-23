@@ -114,7 +114,7 @@ All match arms across `rustc_middle` filled with correct semantics:
 
 Work continues inside-out: middle → AST → HIR → parser → lowering → type checker.
 
-### Step 3: Add `TypeCtor` to `GenericParamDefKind` ← NEXT
+### Step 3: Add `TypeCtor` to `GenericParamDefKind` ✅ DONE
 
 File: `compiler/rustc_middle/src/ty/generics.rs`
 
@@ -123,25 +123,29 @@ pub enum GenericParamDefKind {
     Lifetime,
     Type { has_default: bool, synthetic: bool },
     Const { has_default: bool },
-    TypeCtor,  // <-- add: F<_> parameter of kind * -> *
+    TypeCtor,  // <-- added: F<_> parameter of kind * -> *
 }
 ```
 
-Fix resulting match arms. A `TypeCtor` param:
-- Has no default
-- Is not synthetic
-- Contributes to the generic parameter count
-- Should be skippable in places that only care about types/consts/lifetimes
+Arm decisions made:
+- `descr()` → `"type constructor"`
+- `to_ord()` → `TypeOrConst` (occupies positional slot like a type param)
+- `is_ty_or_const()` → `true` (not a lifetime)
+- `own_requires_monomorphization()` → `true` (any fn generic over `F<_>` requires mono)
+- `own_counts()` / `own_defaults()` → `TypeCtor => {}` (no dedicated counter yet; `own_params.len()` suffices)
+- `to_error()` → `Ty::new_misc_error(tcx).into()` (placeholder; no `GenericArgKind::Ctor` until Step 8)
 
-The compiler's exhaustive match errors are the guide. For each arm, reason about what a `* -> *` kind param means in that context. Common patterns:
-- "does this param have a default?" → `false`
-- "is this a type param?" → *debatable*; for now `false` to keep it distinct
-- "what namespace does this live in?" → type namespace
-- Anywhere that panics/bugs on unexpected param kind → treat `TypeCtor` gracefully
+Additional sites touched:
+- `context.rs` `mk_param_from_def` → `bug!()` (can't build identity GenericArg for ctor yet; dead until Step 8)
+- `instance.rs` `Instance::mono` → `bug!()` (monomorphic instances are ctor-free)
+- `sty.rs` coroutine witness → forward arg; lang-item ADT → `bug!()`
 
-After this: `./x build compiler/rustc_middle` should still pass.
+**Forward dependency:** `mk_param_from_def` needs a real arm in Step 8:
+`GenericArgKind::Ctor(ParamCtor { index: param.index, name: param.name }).into()`
 
-### Step 4: Add `TypeCtor` to HIR `GenericParamKind`
+`./x build compiler/rustc_middle` passes.
+
+### Step 4: Add `TypeCtor` to HIR `GenericParamKind` ← NEXT
 
 File: `compiler/rustc_hir/src/hir.rs`
 

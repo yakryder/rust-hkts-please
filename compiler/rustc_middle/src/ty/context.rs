@@ -2307,6 +2307,11 @@ impl<'tcx> TyCtxt<'tcx> {
                 ty::Const::new_param(self, ParamConst { index: param.index, name: param.name })
                     .into()
             }
+            // GenericArgKind::Ctor does not exist yet (Step 8); no identity arg
+            // can be produced for a TypeCtor param at this stage.
+            GenericParamDefKind::TypeCtor => {
+                bug!("mk_param_from_def: TypeCtor params not yet supported (Step 8)")
+            }
         }
     }
 
