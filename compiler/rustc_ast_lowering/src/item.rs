@@ -1961,6 +1961,9 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
         let hir_id = self.next_id();
         let kind = self.arena.alloc(match kind {
             GenericParamKind::Const { .. } => return None,
+            // TypeCtor params carry no inline bounds at this level; they cannot generate
+            // bound predicates the way plain Type params can.
+            GenericParamKind::TypeCtor => return None,
             GenericParamKind::Type { .. } => {
                 let def_id = self.local_def_id(id).to_def_id();
                 let hir_id = self.next_id();

@@ -325,6 +325,8 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                 GenericParamKind::Lifetime => {}
                 GenericParamKind::Type { default } => *default = None,
                 GenericParamKind::Const { default, .. } => *default = None,
+                // TypeCtor has no default; nothing to strip.
+                GenericParamKind::TypeCtor => {}
             }
 
             // Note that we use self.disambiguator here, if we will create new every time
@@ -339,6 +341,8 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                             GenericParamKind::Lifetime => DefKind::LifetimeParam,
                             GenericParamKind::Type { .. } => DefKind::TyParam,
                             GenericParamKind::Const { .. } => DefKind::ConstParam,
+                            // TypeCtor is a type-level param (kind `* -> *`); it lives in TypeNS.
+                            GenericParamKind::TypeCtor => DefKind::TyParam,
                         },
                         None,
                         &mut self.disambiguator,
@@ -418,6 +422,8 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                             hir::GenericParamKind::Lifetime { .. } => DefKind::LifetimeParam,
                             hir::GenericParamKind::Type { .. } => DefKind::TyParam,
                             hir::GenericParamKind::Const { .. } => DefKind::ConstParam,
+                            // TypeCtor is a type-level param; it resolves in TypeNS like TyParam.
+                            hir::GenericParamKind::TypeCtor => DefKind::TyParam,
                         },
                         p.def_id.to_def_id(),
                     );
@@ -465,6 +471,14 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                             span: p.span,
                         })))
                     }
+                    // TypeCtor is forwarded as a type argument: it's a type-level entity.
+                    hir::GenericParamKind::TypeCtor => {
+                        Some(hir::GenericArg::Type(self.arena.alloc(hir::Ty {
+                            hir_id: self.next_id(),
+                            span: p.span,
+                            kind: hir::TyKind::Path(create_path(self)),
+                        })))
+                    }
                 }
             })),
             constraints: &[],
@@ -505,6 +519,8 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                             GenericParamKind::Type { default: None }
                         }
                         GenericParamDefKind::Const { .. } => self.map_const_kind(p, span),
+                        // TypeCtor params are kind `* -> *`; map directly to the AST variant.
+                        GenericParamDefKind::TypeCtor => GenericParamKind::TypeCtor,
                     },
                 })
                 .collect(),

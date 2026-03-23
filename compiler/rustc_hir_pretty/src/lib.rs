@@ -2470,6 +2470,12 @@ impl<'a> State<'a> {
                     self.print_const_arg(default);
                 }
             }
+            // A type constructor parameter is written `F<_>` — the name has already been
+            // printed above by `print_ident`; we only need to emit the `<_>` suffix that
+            // distinguishes it from a plain type parameter.
+            GenericParamKind::TypeCtor => {
+                self.word("<_>");
+            }
         }
     }
 

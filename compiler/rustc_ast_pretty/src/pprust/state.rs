@@ -2092,6 +2092,11 @@ impl<'a> State<'a> {
                         s.print_expr(&default.value, FixupContext::default());
                     }
                 }
+                // A type constructor parameter is written `F<_>`.
+                ast::GenericParamKind::TypeCtor => {
+                    s.print_ident(param.ident);
+                    s.word("<_>");
+                }
             }
         });
 

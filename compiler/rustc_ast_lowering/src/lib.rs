@@ -2236,6 +2236,11 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                     hir::GenericParamKind::Const { ty, default },
                 )
             }
+            // TypeCtor params have kind `* -> *`: no type annotation, no default.
+            GenericParamKind::TypeCtor => (
+                hir::ParamName::Plain(self.lower_ident(param.ident)),
+                hir::GenericParamKind::TypeCtor,
+            ),
         }
     }
 

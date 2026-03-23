@@ -439,6 +439,9 @@ pub enum GenericParamKind {
         /// Optional default value for the const generic param.
         default: Option<AnonConst>,
     },
+    /// A type constructor parameter of kind `* -> *`, written `F<_>`.
+    /// Has no default and no associated type annotation.
+    TypeCtor,
 }
 
 #[derive(Clone, Encodable, Decodable, Debug, Walkable)]
@@ -456,9 +459,9 @@ pub struct GenericParam {
 impl GenericParam {
     pub fn span(&self) -> Span {
         match &self.kind {
-            GenericParamKind::Lifetime | GenericParamKind::Type { default: None } => {
-                self.ident.span
-            }
+            GenericParamKind::Lifetime
+            | GenericParamKind::Type { default: None }
+            | GenericParamKind::TypeCtor => self.ident.span,
             GenericParamKind::Type { default: Some(ty) } => self.ident.span.to(ty.span),
             GenericParamKind::Const { span, .. } => *span,
         }

@@ -169,7 +169,7 @@ Forward dependency: `rustc_hir_pretty/src/lib.rs:2455` — pretty-printer non-ex
 
 `./x build compiler/rustc_hir` passes. `./x build compiler/rustc_middle` fails at `rustc_hir_pretty` only.
 
-### Step 5: Add `TypeCtor` to AST `GenericParamKind` ← NEXT
+### Step 5: Add `TypeCtor` to AST `GenericParamKind` ✅ DONE
 
 File: `compiler/rustc_ast/src/ast.rs`
 
@@ -178,11 +178,26 @@ pub enum GenericParamKind {
     Lifetime,
     Type { default: Option<Box<Ty>> },
     Const { ty: Box<Ty>, span: Span, default: Option<AnonConst> },
-    TypeCtor,  // <-- add
+    TypeCtor,  // added
 }
 ```
 
-### Step 6: Parser — detect `F<_>` syntax
+Also fixed as part of this step:
+- `rustc_hir_pretty` `print_generic_param`: `TypeCtor => self.word("<_>")` (name pre-printed; just adds the `<_>` suffix)
+- `rustc_ast_pretty` `print_generic_param`: `TypeCtor => { print_ident; word("<_>") }` (name not pre-printed in ast_pretty)
+- `ast.rs` `GenericParam::span()`: `TypeCtor` arm returns `self.ident.span` (no associated data)
+- `ast_lowering/delegation/generics.rs` (4 sites): default-stripping `=> {}`, DefKind `=> TyParam`, path closure `=> TyParam`, arg forwarding as type arg
+- `ast_lowering/delegation/generics.rs` `GenericParamDefKind → GenericParamKind`: direct 1:1 mapping
+- `ast_lowering/lib.rs` `lower_generic_param_kind`: AST `TypeCtor` → HIR `TypeCtor` with plain param name
+- `ast_lowering/item.rs` `lower_generic_bound_predicate`: `TypeCtor => return None` (no inline bounds on `F<_>` in MVP)
+
+"Is this a type?" audit: all sites have explicit arms, no silent fallthroughs.
+
+**Forward dependency:** `DefKind::TyParam` used for TypeCtor throughout lowering — no `DefKind::TypeCtorParam` yet. Resolver will need to distinguish when it starts caring about param kinds.
+
+All four crates pass: `rustc_hir_pretty`, `rustc_ast`, `rustc_ast_lowering`, `rustc_middle`.
+
+### Step 6: Parser — detect `F<_>` syntax ← NEXT
 
 File: `compiler/rustc_parse/src/parser/generics.rs`
 
