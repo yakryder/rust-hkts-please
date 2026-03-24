@@ -293,7 +293,9 @@ fn late_arg_as_bound_arg<'tcx>(param: &GenericParam<'tcx>) -> ty::BoundVariableK
         GenericParamKind::Lifetime { .. } => {
             ty::BoundVariableKind::Region(ty::BoundRegionKind::Named(def_id))
         }
-        GenericParamKind::Type { .. } => ty::BoundVariableKind::Ty(ty::BoundTyKind::Param(def_id)),
+        GenericParamKind::Type { .. } | GenericParamKind::TypeCtor => {
+            ty::BoundVariableKind::Ty(ty::BoundTyKind::Param(def_id))
+        }
         GenericParamKind::Const { .. } => ty::BoundVariableKind::Const,
     }
 }
@@ -308,7 +310,7 @@ fn generic_param_def_as_bound_arg<'tcx>(
         ty::GenericParamDefKind::Lifetime => {
             ty::BoundVariableKind::Region(ty::BoundRegionKind::Named(param.def_id))
         }
-        ty::GenericParamDefKind::Type { .. } => {
+        ty::GenericParamDefKind::Type { .. } | ty::GenericParamDefKind::TypeCtor => {
             ty::BoundVariableKind::Ty(ty::BoundTyKind::Param(param.def_id))
         }
         ty::GenericParamDefKind::Const { .. } => ty::BoundVariableKind::Const,
@@ -1021,7 +1023,9 @@ impl<'a, 'tcx> Visitor<'tcx> for BoundVarContext<'a, 'tcx> {
 
     fn visit_generic_param(&mut self, p: &'tcx GenericParam<'tcx>) {
         match p.kind {
-            GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
+            GenericParamKind::Type { .. }
+            | GenericParamKind::Const { .. }
+            | GenericParamKind::TypeCtor => {
                 self.resolve_type_ref(p.def_id, p.hir_id);
             }
             GenericParamKind::Lifetime { .. } => {
@@ -1043,6 +1047,8 @@ impl<'a, 'tcx> Visitor<'tcx> for BoundVarContext<'a, 'tcx> {
                     self.visit_const_arg_unambig(default);
                 }
             }
+            // TypeCtor has no children to walk (no default, no associated ty)
+            GenericParamKind::TypeCtor => {}
         }
     }
 }
@@ -1169,7 +1175,9 @@ impl<'a, 'tcx> BoundVarContext<'a, 'tcx> {
                                 ResolvedArg::early(param)
                             }
                         }
-                        GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
+                        GenericParamKind::Type { .. }
+                        | GenericParamKind::Const { .. }
+                        | GenericParamKind::TypeCtor => {
                             ResolvedArg::early(param)
                         }
                     },
@@ -2351,7 +2359,9 @@ fn is_late_bound_map(
             hir::GenericParamKind::Lifetime { .. } => { /* fall through */ }
 
             // Neither types nor consts are late-bound.
-            hir::GenericParamKind::Type { .. } | hir::GenericParamKind::Const { .. } => continue,
+            hir::GenericParamKind::Type { .. }
+            | hir::GenericParamKind::Const { .. }
+            | hir::GenericParamKind::TypeCtor => continue,
         }
 
         // appears in the where clauses? early-bound.
@@ -2539,6 +2549,7 @@ fn deny_non_region_late_bound(
 
         let what = match param.kind {
             hir::GenericParamKind::Type { .. } => "type",
+            hir::GenericParamKind::TypeCtor => "type constructor",
             hir::GenericParamKind::Const { .. } => "const",
             hir::GenericParamKind::Lifetime { .. } => continue,
         };

@@ -1045,6 +1045,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                         // a known discriminant and may need to be normalized further or rely
                         // on param env for discriminant projections
                         ty::Param(_)
+                        | ty::Ctor(..)
                         | ty::Alias(..)
                         | ty::Bound(..)
                         | ty::Placeholder(..)
@@ -1105,7 +1106,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                             // We normalize from `Wrapper<Tail>::Metadata` to `Tail::Metadata` if able.
                             // Otherwise, type parameters, opaques, and unnormalized projections have
                             // unit metadata if they're known (e.g. by the param_env) to be sized.
-                            ty::Param(_) | ty::Alias(..)
+                            ty::Param(_) | ty::Ctor(..) | ty::Alias(..)
                                 if self_ty != tail
                                     || selcx.infcx.predicate_must_hold_modulo_regions(
                                         &obligation.with(
@@ -1128,6 +1129,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
 
                             // FIXME(compiler-errors): are Bound and Placeholder types ever known sized?
                             ty::Param(_)
+                            | ty::Ctor(..)
                             | ty::Alias(..)
                             | ty::Bound(..)
                             | ty::Placeholder(..)

@@ -195,7 +195,7 @@ impl<'tcx> InherentCollect<'tcx> {
             | ty::FnPtr(..)
             | ty::Tuple(..)
             | ty::UnsafeBinder(_) => self.check_primitive_impl(id, self_ty),
-            ty::Alias(ty::Projection | ty::Inherent | ty::Opaque, _) | ty::Param(_) => {
+            ty::Alias(ty::Projection | ty::Inherent | ty::Opaque, _) | ty::Param(_) | ty::Ctor(..) => {
                 Err(self.tcx.dcx().emit_err(errors::InherentNominal { span: item_span }))
             }
             ty::FnDef(..)

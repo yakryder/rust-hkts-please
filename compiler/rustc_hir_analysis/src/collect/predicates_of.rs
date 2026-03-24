@@ -253,6 +253,8 @@ fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::Gen
                 predicates
                     .insert((ty::ClauseKind::ConstArgHasType(ct, ct_ty).upcast(tcx), param.span));
             }
+            // TypeCtor params have kind * -> *, not *. No implicit Sized bound applies.
+            hir::GenericParamKind::TypeCtor => {}
         }
     }
 

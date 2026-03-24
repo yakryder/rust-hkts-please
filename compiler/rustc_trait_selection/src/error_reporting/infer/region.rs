@@ -1398,7 +1398,8 @@ fn suggest_precise_capturing<'tcx>(
                         synthetics.push((tcx.def_span(param.def_id), param.name));
                     }
                     ty::GenericParamDefKind::Type { .. }
-                    | ty::GenericParamDefKind::Const { .. } => {
+                    | ty::GenericParamDefKind::Const { .. }
+                    | ty::GenericParamDefKind::TypeCtor => {
                         captured_non_lifetimes.insert(param.name);
                     }
                 }

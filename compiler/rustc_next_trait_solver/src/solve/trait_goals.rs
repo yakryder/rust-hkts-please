@@ -745,6 +745,7 @@ where
                 | ty::Adt(..)
                 | ty::Alias(..)
                 | ty::Param(_)
+                | ty::Ctor(..)
                 | ty::Placeholder(..)
                 | ty::Closure(..)
                 | ty::CoroutineClosure(..)
@@ -1248,6 +1249,7 @@ where
             // types, and therefore have no built-in auto impl.
             ty::Dynamic(..)
             | ty::Param(..)
+            | ty::Ctor(..)
             | ty::Foreign(..)
             | ty::Alias(ty::Projection | ty::Free | ty::Inherent, ..)
             | ty::Placeholder(..) => Some(Err(NoSolution)),

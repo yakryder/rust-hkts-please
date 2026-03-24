@@ -170,7 +170,7 @@ pub(crate) fn orphan_check_impl(
 
             // impl<T> AutoTrait for T {}
             // impl<T: ?Sized> AutoTrait for T {}
-            ty::Param(..) => (
+            ty::Param(..) | ty::Ctor(..) => (
                 if self_ty.is_sized(tcx, ty::TypingEnv::non_body_analysis(tcx, impl_def_id)) {
                     LocalImpl::Allow
                 } else {

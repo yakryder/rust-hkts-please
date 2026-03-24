@@ -921,6 +921,13 @@ impl<'tcx> InferCtxt<'tcx> {
                     .vid;
                 ty::Const::new_var(self.tcx, const_var_id).into()
             }
+            // STEP 8: TypeCtor params need a dedicated GenericArgKind::Ctor variant
+            // and a corresponding inference variable kind. Until then, no code path
+            // should attempt to create an inference variable for a TypeCtor param.
+            GenericParamDefKind::TypeCtor => {
+                bug!("cannot create inference variable for TypeCtor param `{}`; \
+                      GenericArgKind::Ctor not yet implemented (Step 8)", param.name)
+            }
         }
     }
 

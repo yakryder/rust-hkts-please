@@ -230,39 +230,70 @@ if self.token.is_ident()
 }
 ```
 
-### Step 7: HIR Lowering — AST → HIR ← NEXT
+### Step 7: HIR Lowering — propagate `TypeCtor` through hir_analysis ← NEXT
 
-File: `compiler/rustc_ast_lowering/src/item.rs` (or `lib.rs`)
+**Current state (session end):** Agent applied changes to 27 files. All are **unstaged in the working tree** — NOT yet committed. The changes build clean through `rustc_infer`, `rustc_next_trait_solver`, `rustc_trait_selection` but `rustc_hir_analysis` still has **12 non-exhaustive match errors**. Fix those, then commit.
 
-Two lowering sites:
+#### Already done by agent (in working tree, verify before committing):
 
-**Parameter lowering:** `ast::GenericParamKind::TypeCtor` → `hir::GenericParamKind::TypeCtor`
+- `Ty::new_ctor` added to `rustc_type_ir/src/inherent.rs` and `rustc_middle/src/ty/sty.rs`
+- `generics_of.rs`: HIR `TypeCtor` → `ty::GenericParamDefKind::TypeCtor` mapping
+- `predicates_of.rs`: `TypeCtor` gets no implicit `Sized` bound (correct — kind `* -> *`)
+- `resolve_bound_vars.rs`: all 5 sites correctly grouped with `Type`/`Const` where appropriate
+- `check/check.rs`: opaque capture error + `ensure_ok` noop arm
+- `check/wfcheck.rs`: `TypeCtor => Ok(())` (no wf check needed)
+- `coherence/inherent_impls.rs`, `coherence/orphan.rs`: grouped appropriately
+- All trait solver files (`rustc_next_trait_solver`, `rustc_trait_selection`): `Ctor(..)` grouped with `Param(_)` throughout — correct, abstract type, no structural impl
+- `rustc_infer/infer/mod.rs:var_for_def`: `TypeCtor => bug!("STEP 8: ...")` — correct forward-dependency marker
+- `rustc_infer/infer/canonical/canonicalizer.rs`: `Ctor(..)` folds inner ty if flags set
 
-**Use-site lowering:** When resolving a path `F<A>` where `F` resolves to a `TypeCtor` generic param, lower the type to `TyKind::Ctor(param_ctor, ty_arg)`. This happens in the type lowering path — find where `hir::TyKind::Path` is lowered for generic params and add the ctor case.
+#### Remaining 12 errors in `rustc_hir_analysis` — fix these next session:
 
-The index for `ParamCtor` in `GenericArgs` corresponds to the param's index in the generic param list. Use `ParamCtor::for_def(def)` to construct it.
+All are non-exhaustive match errors. File:line and correct arm:
 
-### Step 8: Type Checker
+1. **`hir_ty_lowering/mod.rs:744`** — `GenericArgsCtxt::provided_kind`, filling generic args.
+   - `TypeCtor` arm: `bug!("STEP 8: cannot fill generic arg for TypeCtor param `{}`; needs GenericArgKind::Ctor", param.name)`
 
-File: `compiler/rustc_hir_analysis`
+2. **`hir_ty_lowering/mod.rs:3268`** — `field_of!` macro, match on `ty.kind()`.
+   - `ty::Ctor(..)` arm: group with `Param(_)` — `"type `{ty}` doesn't have fields"`
 
-**Constructor to `TyCtxt`:** Add `Ty::new_ctor(tcx, param_ctor, arg_ty)` to the `Ty` inherent impl in `compiler/rustc_type_ir/src/inherent.rs` (alongside `Ty::new_param`). This is needed by lowering.
+3. **`hir_ty_lowering/bounds.rs:800`** — return-type-notation `extend_to`, filling bound params.
+   - `TypeCtor` arm: same pattern as `Type` — emit `ReturnTypeNotationIllegalParam::Type` error (reuse it) and return `Ty::new_error(tcx, guar).into()`
 
-```rust
-fn new_ctor(interner: I, param: I::ParamCtor, ty: I::Ty) -> Self;
-```
+4–8. **`check/compare_impl_item.rs:1919,1924,2077,2104,2653`** — impl vs trait param comparison.
+   - Lines 1919 and 1924: `filter_map` over params for `synthetic` check. `TypeCtor` → `None` (no synthetic concept).
+   - Lines 2077, 2104: need context — read those sites.
+   - Line 2653: need context — read that site.
 
-Implement in `rustc_middle` similarly to `new_param`.
+9–10. **`impl_wf_check.rs:122,213`**
+   - Line 122 (lifetime bivariance loop): `TypeCtor => {}` (no constraint to add)
+   - Line 213 (unconstrained param check): `TypeCtor` — treat like `Type`: check `!input_parameters.contains(...)`. Need `cgp::Parameter::from(ParamCtor)` — check if that impl exists; if not, `false` for now with a `// STEP 8` note.
 
-**Substitution** — the critical piece: when a `TypeCtor` param `F` is substituted with a concrete constructor `Option`, `Ctor(F, A)` must become `Option<A>`. This happens in the generic arg substitution machinery (`EarlyBinder::instantiate`).
+11. **`variance/mod.rs:174`** — opaque type lifetime variance loop.
+   - `TypeCtor => {}` (no variance slot for ctor params in this context)
 
-The substitution for `Ctor(F, A)` works as:
-1. Look up what `F` substitutes to in `args` — this should be a `GenericArg` that encodes a type constructor (a bare `DefId` + `GenericArgs` prefix, not a full type)
-2. Apply that constructor to the substituted `A`
+12. **`variance/constraints.rs:227`** — `add_constraints_from_ty`, match on `ty.kind()`.
+   - `ty::Ctor(ctor, ty)` arm: `self.add_constraint(current, ctor.index, variance); self.add_constraints_from_ty(current, ty, variance);`
+   - The ctor param contributes to variance at its index; the inner type is traversed with same variance (covariant application).
 
-This is the hardest part. One approach: encode the substitution value for a `TypeCtor` param as a special `GenericArg` variant, or reuse `Ty` with a sentinel (e.g., a `ty::Adt` with a placeholder arg). Design decision needed here.
+#### Use-site lowering — still TODO after errors fixed
 
-**Arity and kind errors:** In `rustc_hir_analysis`, when lowering `T<A>` where `T` is a `Type` param (not `TypeCtor`), emit: "T is not a type constructor". When lowering `F<A, B>` where `F` is `TypeCtor`, emit: "type constructor takes exactly 1 argument".
+The actual `F<A>` → `TyKind::Ctor` lowering in `hir_ty_lowering/mod.rs` is **not yet implemented**. After the 12 errors are fixed, find where `Res::Def(DefKind::TyParam, def_id)` produces `Ty::new_param` and add:
+- Look up `GenericParamDef` by `def_id`, check `.kind == TypeCtor`
+- Extract single type arg from path's `GenericArgs`
+- Return `Ty::new_ctor(tcx, ParamCtor::for_def(param_def), lowered_arg)`
+
+### Step 8: Substitution + `GenericArgKind::Ctor`
+
+**Constructor to `TyCtxt`:** `Ty::new_ctor` already done (Step 7 agent work).
+
+**The hard problem:** when `F` (a `TypeCtor` param) is substituted with `Option`, `Ctor(F, A)` must become `Option<A>`. This requires:
+1. A way to encode "bare constructor" as a `GenericArg` — either a new `GenericArgKind::Ctor(DefId, &[GenericArg])` variant or a sentinel `Ty`.
+2. The `TypeFoldable` impl for `Ctor` to do the application during substitution.
+
+The `bug!()` in `var_for_def` (infer/mod.rs) and `mk_param_from_def` (context.rs) are the trip-wires that will fire until this is done.
+
+Design decision for next session: sentinel `Ty` (simpler, avoids new variant) vs `GenericArgKind::Ctor` (cleaner, more correct). Lean toward sentinel for MVP — a `TyKind::Ctor` with index `u32::MAX` as a "this IS the constructor" marker, or encode as the ADT def with a `_` hole. Think carefully before committing.
 
 ---
 

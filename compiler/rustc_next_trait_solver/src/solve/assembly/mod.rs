@@ -713,6 +713,7 @@ where
             | ty::Never
             | ty::Tuple(_)
             | ty::Param(_)
+            | ty::Ctor(..)
             | ty::Placeholder(..)
             | ty::Infer(ty::IntVar(_) | ty::FloatVar(_))
             | ty::Error(_) => return,
@@ -833,6 +834,7 @@ where
             | ty::Never
             | ty::Tuple(_)
             | ty::Param(_)
+            | ty::Ctor(..)
             | ty::Placeholder(..)
             | ty::Infer(ty::IntVar(_) | ty::FloatVar(_))
             | ty::Error(_) => return,

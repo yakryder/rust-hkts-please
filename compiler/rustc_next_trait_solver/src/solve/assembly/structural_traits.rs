@@ -49,6 +49,7 @@ where
 
         ty::Dynamic(..)
         | ty::Param(..)
+        | ty::Ctor(..)
         | ty::Alias(ty::Projection | ty::Inherent | ty::Free, ..)
         | ty::Placeholder(..)
         | ty::Bound(..)
@@ -146,7 +147,9 @@ where
         // impl {} for extern type
         ty::Foreign(..) => Err(NoSolution),
 
-        ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) => Err(NoSolution),
+        // Ctor(F, A) is abstract — we don't know the concrete constructor, so we
+        // can't structurally prove sizedness. Same as Param.
+        ty::Alias(..) | ty::Param(_) | ty::Ctor(..) | ty::Placeholder(..) => Err(NoSolution),
 
         ty::Bound(..)
         | ty::Infer(ty::TyVar(_) | ty::FreshTy(_) | ty::FreshIntTy(_) | ty::FreshFloatTy(_)) => {
@@ -220,6 +223,7 @@ where
         | ty::Adt(_, _)
         | ty::Alias(_, _)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Placeholder(..) => Err(NoSolution),
 
         ty::Bound(..)
@@ -392,6 +396,7 @@ pub(in crate::solve) fn extract_tupled_inputs_and_output_from_callable<I: Intern
         | ty::UnsafeBinder(_)
         | ty::Alias(_, _)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Placeholder(..)
         | ty::Infer(ty::IntVar(_) | ty::FloatVar(_))
         | ty::Error(_) => Err(NoSolution),
@@ -565,6 +570,7 @@ pub(in crate::solve) fn extract_tupled_inputs_and_output_from_async_callable<I: 
         | ty::Tuple(_)
         | ty::Alias(_, _)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Placeholder(..)
         | ty::Infer(ty::IntVar(_) | ty::FloatVar(_))
         | ty::Error(_) => Err(NoSolution),
@@ -726,6 +732,7 @@ pub(in crate::solve) fn extract_fn_def_from_const_callable<I: Interner>(
         | ty::Pat(_, _)
         | ty::Alias(_, _)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Placeholder(..)
         | ty::Infer(ty::IntVar(_) | ty::FloatVar(_))
         | ty::Error(_)
@@ -808,7 +815,7 @@ pub(in crate::solve) fn const_conditions_for_destruct<I: Interner>(
         // if their inner type implements it.
         ty::UnsafeBinder(_) => Err(NoSolution),
 
-        ty::Dynamic(..) | ty::Param(_) | ty::Alias(..) | ty::Placeholder(_) | ty::Foreign(_) => {
+        ty::Dynamic(..) | ty::Param(_) | ty::Ctor(..) | ty::Alias(..) | ty::Placeholder(_) | ty::Foreign(_) => {
             Err(NoSolution)
         }
 

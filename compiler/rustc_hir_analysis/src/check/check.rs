@@ -715,6 +715,13 @@ fn check_opaque_precise_captures<'tcx>(tcx: TyCtxt<'tcx>, opaque_def_id: LocalDe
                         kind: "const",
                     });
                 }
+                ty::GenericParamDefKind::TypeCtor => {
+                    tcx.dcx().emit_err(errors::ParamNotCaptured {
+                        param_span: tcx.def_span(param.def_id),
+                        opaque_span: tcx.def_span(opaque_def_id),
+                        kind: "type constructor",
+                    });
+                }
             }
         }
     }
@@ -762,6 +769,8 @@ pub(crate) fn check_item_type(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Result<(),
                     tcx.ensure_ok().type_of(param.def_id);
                 }
             }
+            // TypeCtor has no defaults and no associated type.
+            ty::GenericParamDefKind::TypeCtor => {}
             ty::GenericParamDefKind::Const { has_default, .. } => {
                 tcx.ensure_ok().type_of(param.def_id);
                 if has_default {

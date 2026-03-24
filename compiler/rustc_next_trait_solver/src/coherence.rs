@@ -346,7 +346,7 @@ where
             // FIXME(unsafe_binders): Non-local?
             | ty::UnsafeBinder(_) => self.found_non_local_ty(ty),
 
-            ty::Param(..) => panic!("unexpected ty param"),
+            ty::Param(..) | ty::Ctor(..) => panic!("unexpected ty param"),
 
             ty::Placeholder(..) | ty::Bound(..) | ty::Infer(..) => {
                 match self.in_crate {

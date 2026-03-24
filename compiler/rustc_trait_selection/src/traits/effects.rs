@@ -354,6 +354,7 @@ fn evaluate_host_effect_for_copy_clone_goal<'tcx>(
         | ty::Adt(_, _)
         | ty::Alias(_, _)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Placeholder(..) => Err(EvaluationFailure::NoSolution),
 
         ty::Bound(..)
@@ -483,7 +484,7 @@ fn evaluate_host_effect_for_destruct_goal<'tcx>(
         // if their inner type implements it.
         ty::UnsafeBinder(_) => return Err(EvaluationFailure::NoSolution),
 
-        ty::Dynamic(..) | ty::Param(_) | ty::Alias(..) | ty::Placeholder(_) | ty::Foreign(_) => {
+        ty::Dynamic(..) | ty::Param(_) | ty::Ctor(..) | ty::Alias(..) | ty::Placeholder(_) | ty::Foreign(_) => {
             return Err(EvaluationFailure::NoSolution);
         }
 

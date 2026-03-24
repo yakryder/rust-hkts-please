@@ -2187,6 +2187,7 @@ impl<'tcx> SelectionContext<'_, 'tcx> {
 
             ty::Alias(..)
             | ty::Param(_)
+            | ty::Ctor(..)
             | ty::Placeholder(..)
             | ty::Infer(ty::TyVar(_) | ty::FreshTy(_) | ty::FreshIntTy(_) | ty::FreshFloatTy(_))
             | ty::Bound(..) => {
@@ -2264,6 +2265,7 @@ impl<'tcx> SelectionContext<'_, 'tcx> {
             | ty::Adt(..)
             | ty::Alias(..)
             | ty::Param(..)
+            | ty::Ctor(..)
             | ty::Placeholder(..)
             | ty::Bound(..)
             | ty::Ref(_, _, ty::Mutability::Mut)
@@ -2328,6 +2330,7 @@ impl<'tcx> SelectionContext<'_, 'tcx> {
             ty::Placeholder(..)
             | ty::Dynamic(..)
             | ty::Param(..)
+            | ty::Ctor(..)
             | ty::Alias(ty::Projection | ty::Inherent | ty::Free, ..)
             | ty::Bound(..)
             | ty::Infer(ty::TyVar(_) | ty::FreshTy(_) | ty::FreshIntTy(_) | ty::FreshFloatTy(_)) => {

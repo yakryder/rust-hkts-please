@@ -104,7 +104,9 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
 
             for GenericParamDef { name, kind, index, .. } in generics.own_params.iter() {
                 let value = match kind {
-                    GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
+                    GenericParamDefKind::Type { .. }
+                    | GenericParamDefKind::Const { .. }
+                    | GenericParamDefKind::TypeCtor => {
                         args[*index as usize].to_string()
                     }
                     GenericParamDefKind::Lifetime => continue,
@@ -234,7 +236,9 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
             .iter()
             .filter_map(|param| {
                 let value = match param.kind {
-                    GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
+                    GenericParamDefKind::Type { .. }
+                    | GenericParamDefKind::Const { .. }
+                    | GenericParamDefKind::TypeCtor => {
                         if let Some(ty) = trait_pred.trait_ref.args[param.index as usize].as_type()
                         {
                             self.tcx.short_string(ty, long_ty_path)

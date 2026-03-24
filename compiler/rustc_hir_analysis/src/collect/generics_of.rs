@@ -309,6 +309,7 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::Generics {
 
                 ty::GenericParamDefKind::Const { has_default: default.is_some() }
             }
+            GenericParamKind::TypeCtor => ty::GenericParamDefKind::TypeCtor,
         };
         Some(ty::GenericParamDef {
             index: next_index(),

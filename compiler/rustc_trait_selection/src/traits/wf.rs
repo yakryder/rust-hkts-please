@@ -732,6 +732,7 @@ impl<'a, 'tcx> TypeVisitor<TyCtxt<'tcx>> for WfPredicates<'a, 'tcx> {
             | ty::CoroutineWitness(..)
             | ty::Never
             | ty::Param(_)
+            | ty::Ctor(..)
             | ty::Bound(..)
             | ty::Placeholder(..)
             | ty::Foreign(..) => {
