@@ -39,6 +39,27 @@ impl<'a> Parser<'a> {
 
     /// Matches `typaram = IDENT (`?` unbound)? optbounds ( EQ ty )?`.
     fn parse_ty_param(&mut self, preceding_attrs: AttrVec) -> PResult<'a, GenericParam> {
+        // Detect `F<_>` — a type constructor parameter of kind `* -> *`.
+        if self.token.is_ident()
+            && self.look_ahead(1, |t| t.kind == token::Lt)
+            && self.look_ahead(2, |t| t.is_keyword(kw::Underscore))
+            && self.look_ahead(3, |t| t.kind == token::Gt)
+        {
+            let ident = self.parse_ident()?;
+            self.bump(); // <
+            self.bump(); // _
+            self.bump(); // >
+            return Ok(GenericParam {
+                ident,
+                id: ast::DUMMY_NODE_ID,
+                attrs: preceding_attrs,
+                bounds: Vec::new(),
+                kind: GenericParamKind::TypeCtor,
+                is_placeholder: false,
+                colon_span: None,
+            });
+        }
+
         let ident = self.parse_ident()?;
 
         // We might have a typo'd `Const` that was parsed as a type parameter.

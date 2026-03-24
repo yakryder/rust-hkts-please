@@ -197,7 +197,7 @@ Also fixed as part of this step:
 
 All four crates pass: `rustc_hir_pretty`, `rustc_ast`, `rustc_ast_lowering`, `rustc_middle`.
 
-### Step 6: Parser — detect `F<_>` syntax ← NEXT
+### Step 6: Parser — detect `F<_>` syntax ✅ DONE
 
 File: `compiler/rustc_parse/src/parser/generics.rs`
 
@@ -230,7 +230,7 @@ if self.token.is_ident()
 }
 ```
 
-### Step 7: HIR Lowering — AST → HIR
+### Step 7: HIR Lowering — AST → HIR ← NEXT
 
 File: `compiler/rustc_ast_lowering/src/item.rs` (or `lib.rs`)
 
