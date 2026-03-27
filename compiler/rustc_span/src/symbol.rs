@@ -2059,6 +2059,7 @@ symbols! {
         type_ascribe,
         type_ascription,
         type_changing_struct_update,
+        type_constructors,
         type_id,
         type_id_eq,
         type_id_vtable,

@@ -474,6 +474,18 @@ impl<'a> Visitor<'a> for PostExpansionVisitor<'a> {
         }
         visit::walk_assoc_item(self, i, ctxt)
     }
+
+    fn visit_generic_param(&mut self, param: &'a ast::GenericParam) {
+        if matches!(param.kind, ast::GenericParamKind::TypeCtor) {
+            gate!(
+                &self,
+                type_constructors,
+                param.ident.span,
+                "type constructor parameters (`F<_>`) are experimental"
+            );
+        }
+        visit::walk_generic_param(self, param);
+    }
 }
 
 pub fn check_crate(krate: &ast::Crate, sess: &Session, features: &Features) {
