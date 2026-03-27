@@ -876,7 +876,7 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
                 self.assemble_inherent_impl_candidates_for_type(did, receiver_steps);
                 self.assemble_inherent_candidates_for_incoherent_ty(raw_self_ty, receiver_steps);
             }
-            ty::Param(_) => {
+            ty::Param(_) | ty::Ctor(_, _) => {
                 self.assemble_inherent_candidates_from_param(raw_self_ty);
             }
             ty::Bool
@@ -2569,7 +2569,7 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
                             // In general, during probe we erase regions.
                             self.tcx.lifetimes.re_erased.into()
                         }
-                        GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
+                        GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } | GenericParamDefKind::TypeCtor => {
                             self.var_for_def(self.span, param)
                         }
                     }

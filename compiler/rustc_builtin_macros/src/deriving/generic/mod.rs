@@ -685,6 +685,9 @@ impl<'a> TraitDef<'a> {
                     param_clone.kind = const_nodefault_kind;
                     param_clone
                 }
+                GenericParamKind::TypeCtor => {
+                    span_bug!(param.span(), "type constructor generics should not be in derive")
+                }
             })
             .map(|mut param| {
                 // Remove all attributes, because there might be helper attributes

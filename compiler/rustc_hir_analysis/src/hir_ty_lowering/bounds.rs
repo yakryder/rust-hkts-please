@@ -816,6 +816,15 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                     });
                     Ty::new_error(tcx, guar).into()
                 }
+                ty::GenericParamDefKind::TypeCtor => {
+                    let guar = *emitted_bad_param_err.get_or_insert_with(|| {
+                        self.dcx().emit_err(crate::errors::ReturnTypeNotationIllegalParam::Type {
+                            span: path_span,
+                            param_span: tcx.def_span(param.def_id),
+                        })
+                    });
+                    Ty::new_error(tcx, guar).into()
+                }
                 ty::GenericParamDefKind::Const { .. } => {
                     let guar = *emitted_bad_param_err.get_or_insert_with(|| {
                         self.dcx().emit_err(crate::errors::ReturnTypeNotationIllegalParam::Const {

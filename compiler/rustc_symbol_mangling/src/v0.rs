@@ -481,7 +481,7 @@ impl<'tcx> Printer<'tcx> for V0SymbolMangler<'tcx> {
                 unreachable!()
             }
             ty::Tuple(_) if ty.is_unit() => unreachable!(),
-            ty::Param(_) => unreachable!(),
+            ty::Param(_) | ty::Ctor(_, _) => unreachable!(),
 
             ty::Bound(..) | ty::Placeholder(_) | ty::Infer(_) | ty::Error(_) => bug!(),
 

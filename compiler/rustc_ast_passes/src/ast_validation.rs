@@ -1064,6 +1064,7 @@ fn validate_generic_param_order(dcx: DiagCtxtHandle<'_>, generics: &[GenericPara
         let (ord_kind, ident) = match &param.kind {
             GenericParamKind::Lifetime => (ParamKindOrd::Lifetime, ident.to_string()),
             GenericParamKind::Type { .. } => (ParamKindOrd::TypeOrConst, ident.to_string()),
+            GenericParamKind::TypeCtor => (ParamKindOrd::TypeOrConst, ident.to_string()),
             GenericParamKind::Const { ty, .. } => {
                 let ty = pprust::ty_to_string(ty);
                 (ParamKindOrd::TypeOrConst, format!("const {ident}: {ty}"))
@@ -1101,6 +1102,7 @@ fn validate_generic_param_order(dcx: DiagCtxtHandle<'_>, generics: &[GenericPara
                 }
                 GenericParamKind::Type { default: None } => (),
                 GenericParamKind::Lifetime => (),
+                GenericParamKind::TypeCtor => (),
                 GenericParamKind::Const { ty: _, span: _, default: Some(default) } => {
                     ordered_params += " = ";
                     ordered_params += &pprust::expr_to_string(&default.value);
@@ -1563,7 +1565,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
                 | GenericParamKind::Const { default: Some(_), .. } => {
                     prev_param_default = Some(param.ident.span);
                 }
-                GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
+                GenericParamKind::Type { .. } | GenericParamKind::Const { .. } | GenericParamKind::TypeCtor => {
                     if let Some(span) = prev_param_default {
                         self.dcx().emit_err(errors::GenericDefaultTrailing { span });
                         break;

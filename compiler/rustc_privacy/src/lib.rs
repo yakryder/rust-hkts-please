@@ -292,6 +292,7 @@ where
             | ty::FnPtr(..)
             | ty::UnsafeBinder(_)
             | ty::Param(..)
+            | ty::Ctor(..)
             | ty::Bound(..)
             | ty::Error(_)
             | ty::CoroutineWitness(..) => {}

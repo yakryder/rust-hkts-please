@@ -214,7 +214,8 @@ impl<'tcx> InterpCx<'tcx, CompileTimeMachine<'tcx>> {
                         | ty::Bound(..)
                         | ty::Placeholder(_)
                         | ty::Infer(..)
-                        | ty::Error(_) => self.downcast(&field_dest, sym::Other)?.0,
+                        | ty::Error(_)
+                        | ty::Ctor(_, _) => self.downcast(&field_dest, sym::Other)?.0,
                     };
                     self.write_discriminant(variant_index, &field_dest)?
                 }

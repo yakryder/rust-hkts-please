@@ -176,7 +176,8 @@ fn variance_of_opaque(
                         variances[param.index as usize] = ty::Bivariant;
                     }
                     ty::GenericParamDefKind::Type { .. }
-                    | ty::GenericParamDefKind::Const { .. } => {}
+                    | ty::GenericParamDefKind::Const { .. }
+                    | ty::GenericParamDefKind::TypeCtor => {}
                 }
             }
         }

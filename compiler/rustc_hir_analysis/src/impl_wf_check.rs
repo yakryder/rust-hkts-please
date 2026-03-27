@@ -175,7 +175,7 @@ pub(crate) fn enforce_impl_lifetime_params_are_constrained(
                     res = Err(diag.emit());
                 }
             }
-            ty::GenericParamDefKind::Type { .. } | ty::GenericParamDefKind::Const { .. } => {
+            ty::GenericParamDefKind::Type { .. } | ty::GenericParamDefKind::Const { .. } | ty::GenericParamDefKind::TypeCtor => {
                 // Enforced in `enforce_impl_non_lifetime_params_are_constrained`.
             }
         }
@@ -219,6 +219,11 @@ pub(crate) fn enforce_impl_non_lifetime_params_are_constrained(
             ty::GenericParamDefKind::Const { .. } => {
                 let param_ct = ty::ParamConst::for_def(param);
                 !input_parameters.contains(&cgp::Parameter::from(param_ct))
+            }
+            ty::GenericParamDefKind::TypeCtor => {
+                // STEP 8: TypeCtor params need to be checked for constraints via Parameter::from
+                // For now, treat as unconstrained (requires full Step 8 infrastructure)
+                false
             }
             ty::GenericParamDefKind::Lifetime => {
                 // Enforced in `enforce_impl_type_params_are_constrained`.

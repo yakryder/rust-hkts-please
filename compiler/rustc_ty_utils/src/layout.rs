@@ -759,7 +759,7 @@ fn layout_of_uncached<'tcx>(
         }
 
         // Types with no meaningful known layout.
-        ty::Param(_) | ty::Placeholder(..) => {
+        ty::Param(_) | ty::Placeholder(..) | ty::Ctor(_, _) => {
             return Err(error(cx, LayoutError::TooGeneric(ty)));
         }
 

@@ -1517,10 +1517,11 @@ impl<'v> RootCollector<'_, 'v> {
                                     self.tcx.lifetimes.re_erased.into()
                                 }
                                 GenericParamDefKind::Type { .. }
-                                | GenericParamDefKind::Const { .. } => {
+                                | GenericParamDefKind::Const { .. }
+                                | GenericParamDefKind::TypeCtor => {
                                     unreachable!(
                                         "`own_requires_monomorphization` check means that \
-                                we should have no type/const params"
+                                we should have no type/const/ctor params"
                                     )
                                 }
                             }
@@ -1744,10 +1745,10 @@ fn create_mono_items_for_default_impls<'tcx>(
     // it, to validate whether or not the impl is legal to instantiate at all.
     let only_region_params = |param: &ty::GenericParamDef, _: &_| match param.kind {
         GenericParamDefKind::Lifetime => tcx.lifetimes.re_erased.into(),
-        GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } => {
+        GenericParamDefKind::Type { .. } | GenericParamDefKind::Const { .. } | GenericParamDefKind::TypeCtor => {
             unreachable!(
                 "`own_requires_monomorphization` check means that \
-                we should have no type/const params"
+                we should have no type/const/ctor params"
             )
         }
     };

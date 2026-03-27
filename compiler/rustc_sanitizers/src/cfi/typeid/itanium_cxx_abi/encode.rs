@@ -619,7 +619,8 @@ pub(crate) fn encode_ty<'tcx>(
         | ty::Error(..)
         | ty::CoroutineWitness(..)
         | ty::Infer(..)
-        | ty::Placeholder(..) => {
+        | ty::Placeholder(..)
+        | ty::Ctor(_, _) => {
             bug!("encode_ty: unexpected `{:?}`", ty.kind());
         }
     };

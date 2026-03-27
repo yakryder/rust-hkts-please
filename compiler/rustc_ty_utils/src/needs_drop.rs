@@ -260,7 +260,7 @@ where
                             queue_type(self, required);
                         }
                     }
-                    ty::Alias(..) | ty::Array(..) | ty::Placeholder(_) | ty::Param(_) => {
+                    ty::Alias(..) | ty::Array(..) | ty::Placeholder(_) | ty::Param(_) | ty::Ctor(_, _) => {
                         if ty == component {
                             // Return the type to the caller: they may be able
                             // to normalize further than we can.

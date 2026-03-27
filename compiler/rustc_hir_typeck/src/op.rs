@@ -1020,8 +1020,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let args =
                     ty::GenericArgs::for_item(self.tcx, trait_did, |param, _| match param.kind {
                         ty::GenericParamDefKind::Lifetime
-                        | ty::GenericParamDefKind::Const { .. } => {
-                            unreachable!("did not expect operand trait to have lifetime/const args")
+                        | ty::GenericParamDefKind::Const { .. }
+                        | ty::GenericParamDefKind::TypeCtor => {
+                            unreachable!("did not expect operand trait to have lifetime/const/ctor args")
                         }
                         ty::GenericParamDefKind::Type { .. } => {
                             if param.index == 0 {

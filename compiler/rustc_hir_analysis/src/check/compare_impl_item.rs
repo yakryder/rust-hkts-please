@@ -1918,12 +1918,12 @@ fn compare_synthetic_generics<'tcx>(
     let impl_m_type_params =
         impl_m_generics.own_params.iter().filter_map(|param| match param.kind {
             GenericParamDefKind::Type { synthetic, .. } => Some((param.def_id, synthetic)),
-            GenericParamDefKind::Lifetime | GenericParamDefKind::Const { .. } => None,
+            GenericParamDefKind::Lifetime | GenericParamDefKind::Const { .. } | GenericParamDefKind::TypeCtor => None,
         });
     let trait_m_type_params =
         trait_m_generics.own_params.iter().filter_map(|param| match param.kind {
             GenericParamDefKind::Type { synthetic, .. } => Some((param.def_id, synthetic)),
-            GenericParamDefKind::Lifetime | GenericParamDefKind::Const { .. } => None,
+            GenericParamDefKind::Lifetime | GenericParamDefKind::Const { .. } | GenericParamDefKind::TypeCtor => None,
         });
     for ((impl_def_id, impl_synthetic), (trait_def_id, trait_synthetic)) in
         iter::zip(impl_m_type_params, trait_m_type_params)
@@ -2084,6 +2084,9 @@ fn compare_generic_param_kinds<'tcx>(
             // this is exhaustive so that anyone adding new generic param kinds knows
             // to make sure this error is reported for them.
             (Const { .. }, Const { .. }) | (Type { .. }, Type { .. }) => false,
+            (TypeCtor, TypeCtor) => false,
+            (TypeCtor, Type { .. }) | (TypeCtor, Const { .. }) => true,
+            (Type { .. }, TypeCtor) | (Const { .. }, TypeCtor) => true,
             (Lifetime { .. }, _) | (_, Lifetime { .. }) => {
                 bug!("lifetime params are expected to be filtered by `ty_const_params_of`")
             }
@@ -2110,6 +2113,7 @@ fn compare_generic_param_kinds<'tcx>(
                     )
                 }
                 Type { .. } => format!("{prefix} type parameter"),
+                TypeCtor => format!("{prefix} type constructor parameter"),
                 Lifetime { .. } => span_bug!(
                     tcx.def_span(param.def_id),
                     "lifetime params are expected to be filtered by `ty_const_params_of`"
@@ -2685,6 +2689,10 @@ fn param_env_with_gat_bounds<'tcx>(
                         ty::BoundConst::new(ty::BoundVar::from_usize(bound_vars.len() - 1)),
                     )
                     .into()
+                }
+                GenericParamDefKind::TypeCtor => {
+                    // STEP 8: TypeCtor params in GATs not yet supported
+                    Ty::new_misc_error(tcx).into()
                 }
             });
         // When checking something like

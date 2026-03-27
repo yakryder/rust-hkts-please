@@ -218,7 +218,7 @@ impl<'tcx> TypeFolder<TyCtxt<'tcx>> for TransformTy<'tcx> {
                 self.tcx.normalize_erasing_regions(ty::TypingEnv::fully_monomorphized(), t),
             ),
 
-            ty::Bound(..) | ty::Error(..) | ty::Infer(..) | ty::Param(..) | ty::Placeholder(..) => {
+            ty::Bound(..) | ty::Error(..) | ty::Infer(..) | ty::Param(..) | ty::Placeholder(..) | ty::Ctor(_, _) => {
                 bug!("fold_ty: unexpected `{:?}`", t.kind());
             }
         }

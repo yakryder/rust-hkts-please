@@ -520,7 +520,7 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
 
                 ty::UnsafeBinder(ty) => is_very_trivially_sized(ty.skip_binder()),
 
-                ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) => false,
+                ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) | ty::Ctor(_, _) => false,
 
                 ty::Infer(ty::TyVar(_)) => false,
 

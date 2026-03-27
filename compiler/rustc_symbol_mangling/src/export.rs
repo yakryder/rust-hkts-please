@@ -119,6 +119,7 @@ impl<'tcx> AbiHashStable<'tcx> for Ty<'tcx> {
             | ty::Tuple(_)
             | ty::Alias(_, _)
             | ty::Param(_)
+            | ty::Ctor(_, _)
             | ty::Bound(_, _)
             | ty::Placeholder(_)
             | ty::Infer(_)

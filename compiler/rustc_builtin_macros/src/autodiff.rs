@@ -609,6 +609,7 @@ mod llvm_enzyme {
                     Some(AngleBracketedArg::Arg(GenericArg::Const(anon_const)))
                 }
                 GenericParamKind::Lifetime { .. } => None,
+                GenericParamKind::TypeCtor => None,
             })
             .collect::<ThinVec<_>>();
 

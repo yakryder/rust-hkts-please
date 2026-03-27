@@ -768,6 +768,9 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                             Ty::new_misc_error(tcx).into()
                         }
                     }
+                    GenericParamDefKind::TypeCtor => {
+                        bug!("STEP 8: cannot fill generic arg for TypeCtor param `{}`; needs GenericArgKind::Ctor", param.name)
+                    }
                     GenericParamDefKind::Const { has_default, .. } => {
                         let ty = tcx
                             .at(self.span)
@@ -3389,6 +3392,7 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
             | ty::CoroutineWitness(_, _)
             | ty::Never
             | ty::Param(_)
+            | ty::Ctor(_, _)
             | ty::Bound(_, _)
             | ty::Placeholder(_)
             | ty::Slice(..) => Ty::new_error(

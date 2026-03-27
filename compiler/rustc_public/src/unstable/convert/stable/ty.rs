@@ -455,6 +455,9 @@ impl<'tcx> Stable<'tcx> for ty::TyKind<'tcx> {
                 TyKind::Alias(alias_kind.stable(tables, cx), alias_ty.stable(tables, cx))
             }
             ty::Param(param_ty) => TyKind::Param(param_ty.stable(tables, cx)),
+            ty::Ctor(param_ctor, ty) => {
+                TyKind::Ctor(param_ctor.stable(tables, cx), ty.stable(tables, cx))
+            }
             ty::Bound(ty::BoundVarIndexKind::Canonical, _) => {
                 unreachable!()
             }
@@ -657,6 +660,7 @@ impl<'tcx> Stable<'tcx> for rustc_middle::ty::GenericParamDefKind {
             ty::GenericParamDefKind::Const { has_default } => {
                 GenericParamDefKind::Const { has_default }
             }
+            ty::GenericParamDefKind::TypeCtor => GenericParamDefKind::TypeCtor,
         }
     }
 }

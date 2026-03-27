@@ -53,6 +53,9 @@ pub(crate) fn expand_deriving_coerce_pointee(
             GenericParamKind::Lifetime => GenericArg::Lifetime(cx.lifetime(p.span(), p.ident)),
             GenericParamKind::Type { .. } => GenericArg::Type(cx.ty_ident(p.span(), p.ident)),
             GenericParamKind::Const { .. } => GenericArg::Const(cx.const_ident(p.span(), p.ident)),
+            GenericParamKind::TypeCtor => {
+                span_bug!(p.span(), "type constructor generics should not be converted to args")
+            }
         })
         .collect();
     let type_params: Vec<_> = generics
@@ -128,6 +131,9 @@ pub(crate) fn expand_deriving_coerce_pointee(
                                         ty.clone(),
                                         None,
                                     ),
+                                GenericParamKind::TypeCtor => {
+                                    span_bug!(p.span(), "type constructor generics should not be in impl")
+                                }
                             })
                             .collect(),
                         where_clause: generics.where_clause.clone(),
@@ -233,6 +239,9 @@ pub(crate) fn expand_deriving_coerce_pointee(
             ast::GenericParamKind::Const { default, .. } => *default = None,
             ast::GenericParamKind::Type { default } => *default = None,
             ast::GenericParamKind::Lifetime => {}
+            ast::GenericParamKind::TypeCtor => {
+                span_bug!(params.span(), "type constructor generics should not be in impl")
+            }
         }
         // We CANNOT rewrite `#[pointee]` type parameter bounds.
         // This has been set in stone. (**)
@@ -438,7 +447,7 @@ impl<'a, 'b> rustc_ast::visit::Visitor<'a> for DetectNonGenericPointeeAttr<'a, '
                 rustc_ast::visit::visit_opt!(error_on_pointee, visit_ty, default);
             }
 
-            GenericParamKind::Const { .. } | GenericParamKind::Lifetime => {
+            GenericParamKind::Const { .. } | GenericParamKind::Lifetime | GenericParamKind::TypeCtor => {
                 rustc_ast::visit::walk_generic_param(&mut error_on_pointee, param);
             }
         }
