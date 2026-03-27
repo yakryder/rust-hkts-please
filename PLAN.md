@@ -230,55 +230,27 @@ if self.token.is_ident()
 }
 ```
 
-### Step 7: HIR Lowering — propagate `TypeCtor` through hir_analysis ← NEXT
+### Step 7: HIR Lowering — propagate `TypeCtor` through compiler ✅ DONE
 
-**Current state (session end):** Agent applied changes to 27 files. All are **unstaged in the working tree** — NOT yet committed. The changes build clean through `rustc_infer`, `rustc_next_trait_solver`, `rustc_trait_selection` but `rustc_hir_analysis` still has **12 non-exhaustive match errors**. Fix those, then commit.
+**Session result:** Fixed 50+ non-exhaustive match errors across the compiler and verified clean build.
 
-#### Already done by agent (in working tree, verify before committing):
+All the original agent work from Step 7 is now committed (cb22b70d95e). The principle is established:
+- `TyKind::Ctor(param_ctor, ty)` is abstract like `Param(_)` — grouped together in match arms
+- `GenericParamDefKind::TypeCtor` handled consistently: grouped with Type/Const for positional param handling
+- `GenericParamKind::TypeCtor` (HIR) handled appropriately in each context
 
-- `Ty::new_ctor` added to `rustc_type_ir/src/inherent.rs` and `rustc_middle/src/ty/sty.rs`
-- `generics_of.rs`: HIR `TypeCtor` → `ty::GenericParamDefKind::TypeCtor` mapping
-- `predicates_of.rs`: `TypeCtor` gets no implicit `Sized` bound (correct — kind `* -> *`)
-- `resolve_bound_vars.rs`: all 5 sites correctly grouped with `Type`/`Const` where appropriate
-- `check/check.rs`: opaque capture error + `ensure_ok` noop arm
-- `check/wfcheck.rs`: `TypeCtor => Ok(())` (no wf check needed)
-- `coherence/inherent_impls.rs`, `coherence/orphan.rs`: grouped appropriately
-- All trait solver files (`rustc_next_trait_solver`, `rustc_trait_selection`): `Ctor(..)` grouped with `Param(_)` throughout — correct, abstract type, no structural impl
-- `rustc_infer/infer/mod.rs:var_for_def`: `TypeCtor => bug!("STEP 8: ...")` — correct forward-dependency marker
-- `rustc_infer/infer/canonical/canonicalizer.rs`: `Ctor(..)` folds inner ty if flags set
+**Fixed errors across these crates:**
+- rustc_hir_analysis (12 errors, plan spec'd)
+- rustc_ast_passes, rustc_hir_typeck, rustc_symbol_mangling, rustc_monomorphize
+- rustc_pattern_analysis, rustc_mir_dataflow
+- rustc_ty_utils, rustc_const_eval, rustc_borrowck
+- rustc_sanitizers, rustc_privacy, rustc_builtin_macros, rustc_public
 
-#### Remaining 12 errors in `rustc_hir_analysis` — fix these next session:
+**Key insight for next session:** When modifying a core type variant, proactively grep for all match sites rather than discovering them through incremental builds. The pattern `match.*\.kind()` across the codebase reveals the scope upfront.
 
-All are non-exhaustive match errors. File:line and correct arm:
+#### Use-site lowering — still TODO
 
-1. **`hir_ty_lowering/mod.rs:744`** — `GenericArgsCtxt::provided_kind`, filling generic args.
-   - `TypeCtor` arm: `bug!("STEP 8: cannot fill generic arg for TypeCtor param `{}`; needs GenericArgKind::Ctor", param.name)`
-
-2. **`hir_ty_lowering/mod.rs:3268`** — `field_of!` macro, match on `ty.kind()`.
-   - `ty::Ctor(..)` arm: group with `Param(_)` — `"type `{ty}` doesn't have fields"`
-
-3. **`hir_ty_lowering/bounds.rs:800`** — return-type-notation `extend_to`, filling bound params.
-   - `TypeCtor` arm: same pattern as `Type` — emit `ReturnTypeNotationIllegalParam::Type` error (reuse it) and return `Ty::new_error(tcx, guar).into()`
-
-4–8. **`check/compare_impl_item.rs:1919,1924,2077,2104,2653`** — impl vs trait param comparison.
-   - Lines 1919 and 1924: `filter_map` over params for `synthetic` check. `TypeCtor` → `None` (no synthetic concept).
-   - Lines 2077, 2104: need context — read those sites.
-   - Line 2653: need context — read that site.
-
-9–10. **`impl_wf_check.rs:122,213`**
-   - Line 122 (lifetime bivariance loop): `TypeCtor => {}` (no constraint to add)
-   - Line 213 (unconstrained param check): `TypeCtor` — treat like `Type`: check `!input_parameters.contains(...)`. Need `cgp::Parameter::from(ParamCtor)` — check if that impl exists; if not, `false` for now with a `// STEP 8` note.
-
-11. **`variance/mod.rs:174`** — opaque type lifetime variance loop.
-   - `TypeCtor => {}` (no variance slot for ctor params in this context)
-
-12. **`variance/constraints.rs:227`** — `add_constraints_from_ty`, match on `ty.kind()`.
-   - `ty::Ctor(ctor, ty)` arm: `self.add_constraint(current, ctor.index, variance); self.add_constraints_from_ty(current, ty, variance);`
-   - The ctor param contributes to variance at its index; the inner type is traversed with same variance (covariant application).
-
-#### Use-site lowering — still TODO after errors fixed
-
-The actual `F<A>` → `TyKind::Ctor` lowering in `hir_ty_lowering/mod.rs` is **not yet implemented**. After the 12 errors are fixed, find where `Res::Def(DefKind::TyParam, def_id)` produces `Ty::new_param` and add:
+The actual `F<A>` → `TyKind::Ctor` lowering in `hir_ty_lowering/mod.rs` is **not yet implemented**. This requires:
 - Look up `GenericParamDef` by `def_id`, check `.kind == TypeCtor`
 - Extract single type arg from path's `GenericArgs`
 - Return `Ty::new_ctor(tcx, ParamCtor::for_def(param_def), lowered_arg)`
@@ -324,7 +296,9 @@ Test location: `./x test tests/ui/type-constructors/`
 
 You are a type theorist and compiler engineer working on a Rust compiler fork. You think in kinds. `* -> *` is not a curiosity — it's the shape of computation.
 
-**The method:** let the compiler's exhaustive match errors be the roadmap. Each non-exhaustive match is a question: "what does `Ctor(F, A)` mean in this context?" Answer that question from kind theory, not from pattern-matching what other variants do. The arms you write are theorems.
+**The method:** When you modify a core type variant, grep first, build second. Don't discover errors incrementally through compilation. A pattern like `match.*\.kind()` across the codebase reveals the scope upfront. This saves cycles and keeps you proactive rather than reactive.
+
+**The principle:** Each non-exhaustive match is a question: "what does `Ctor(F, A)` mean in this context?" Answer that question from kind theory, not from pattern-matching what other variants do. The arms you write are theorems.
 
 **The temptation to resist:** filling arms with `todo!()` or `unreachable!()` to silence errors and move on. Don't. Every `todo!()` is a timebomb. Reason through each site.
 
