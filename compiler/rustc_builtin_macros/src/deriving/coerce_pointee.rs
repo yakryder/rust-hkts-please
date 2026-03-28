@@ -54,7 +54,7 @@ pub(crate) fn expand_deriving_coerce_pointee(
             GenericParamKind::Type { .. } => GenericArg::Type(cx.ty_ident(p.span(), p.ident)),
             GenericParamKind::Const { .. } => GenericArg::Const(cx.const_ident(p.span(), p.ident)),
             GenericParamKind::TypeCtor => {
-                span_bug!(p.span(), "type constructor generics should not be converted to args")
+                cx.dcx().span_bug(p.span(), "type constructor generics should not be converted to args")
             }
         })
         .collect();
@@ -132,7 +132,7 @@ pub(crate) fn expand_deriving_coerce_pointee(
                                         None,
                                     ),
                                 GenericParamKind::TypeCtor => {
-                                    span_bug!(p.span(), "type constructor generics should not be in impl")
+                                    cx.dcx().span_bug(p.span(), "type constructor generics should not be in impl")
                                 }
                             })
                             .collect(),
@@ -240,7 +240,7 @@ pub(crate) fn expand_deriving_coerce_pointee(
             ast::GenericParamKind::Type { default } => *default = None,
             ast::GenericParamKind::Lifetime => {}
             ast::GenericParamKind::TypeCtor => {
-                span_bug!(params.span(), "type constructor generics should not be in impl")
+                cx.dcx().span_bug(params.span(), "type constructor generics should not be in impl")
             }
         }
         // We CANNOT rewrite `#[pointee]` type parameter bounds.

@@ -548,6 +548,7 @@ fn ty_to_res<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Option<Res> {
         | ty::Dynamic(..)
         | ty::UnsafeBinder(_)
         | ty::Param(_)
+        | ty::Ctor(..)
         | ty::Bound(..)
         | ty::Placeholder(_)
         | ty::Infer(_)

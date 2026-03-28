@@ -597,6 +597,9 @@ fn clean_generic_param_def(
                 },
             },
         ),
+        ty::GenericParamDefKind::TypeCtor => {
+            panic!("type constructor parameter should not appear in documentation")
+        }
     };
 
     GenericParamDef { name, def_id: def.def_id, kind }
@@ -661,6 +664,9 @@ fn clean_generic_param<'tcx>(
                 }),
             },
         ),
+        hir::GenericParamKind::TypeCtor => {
+            panic!("type constructor parameter should not appear in documentation")
+        }
     };
 
     GenericParamDef { name, def_id: param.def_id.to_def_id(), kind }
@@ -838,6 +844,7 @@ fn clean_ty_generics_inner<'tcx>(
                 true
             }
             ty::GenericParamDefKind::Const { .. } => true,
+            ty::GenericParamDefKind::TypeCtor => false,
         })
         .map(|param| clean_generic_param_def(param, ParamDefaults::Yes, cx))
         .collect();
@@ -1789,6 +1796,8 @@ fn maybe_expand_private_type_alias<'tcx>(
             }
             // FIXME(#82852): Instantiate const parameters.
             hir::GenericParamKind::Const { .. } => {}
+            // Type constructor parameters should not appear in user-visible docs
+            hir::GenericParamKind::TypeCtor => {}
         }
     }
 
@@ -2276,6 +2285,7 @@ pub(crate) fn clean_middle_ty<'tcx>(
         ty::Placeholder(..) => panic!("Placeholder"),
         ty::CoroutineWitness(..) => panic!("CoroutineWitness"),
         ty::Infer(..) => panic!("Infer"),
+        ty::Ctor(..) => panic!("Ctor"),
 
         ty::Error(_) => FatalError.raise(),
     }

@@ -129,7 +129,7 @@ impl Ty {
                             GenericArg::Const(cx.const_ident(span, param.ident))
                         }
                         GenericParamKind::TypeCtor => {
-                            span_bug!(span, "type constructor generics should not be converted to args")
+                            cx.dcx().span_bug(span, "type constructor generics should not be converted to args")
                         }
                     })
                     .collect();

@@ -71,7 +71,7 @@ where
                         ty::GenericArgKind::Const(ct) => {
                             self.structurally_normalize_const(goal.param_env, ct).map(Into::into)
                         }
-                        ty::GenericArgKind::Ctor(ctor) => {
+                        ty::GenericArgKind::Ctor(_ctor) => {
                             // Ctor args are concrete; return as-is
                             Ok(arg)
                         }

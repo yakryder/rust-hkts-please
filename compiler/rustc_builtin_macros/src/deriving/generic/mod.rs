@@ -686,7 +686,7 @@ impl<'a> TraitDef<'a> {
                     param_clone
                 }
                 GenericParamKind::TypeCtor => {
-                    span_bug!(param.span(), "type constructor generics should not be in derive")
+                    cx.dcx().span_bug(param.span(), "type constructor generics should not be in derive")
                 }
             })
             .map(|mut param| {
@@ -789,6 +789,9 @@ impl<'a> TraitDef<'a> {
                 }
                 GenericParamKind::Const { .. } => {
                     GenericArg::Const(cx.const_ident(param.ident.span.with_ctxt(ctxt), param.ident))
+                }
+                GenericParamKind::TypeCtor => {
+                    cx.dcx().span_bug(param.span(), "type constructor generics should not be in derive")
                 }
             })
             .collect();
