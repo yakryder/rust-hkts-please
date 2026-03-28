@@ -132,6 +132,14 @@ pub trait Interner:
     /// Apply a concrete constructor to a type argument, producing a type of kind `*`.
     /// E.g. `apply_ctor(Option_ctor, i32)` → `Option<i32>`.
     fn apply_ctor(self, ctor: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
+
+    /// Check if a ctor is an identity ctor (i.e., it wraps a param's own DefId).
+    /// Identity ctors should not be passed to `apply_ctor`; instead they should be
+    /// reconstructed as `Ctor(param, arg)`.
+    fn ctor_is_identity(self, ctor: Self::CtorArg) -> bool;
+
+    /// Construct a `Ctor(param, arg)` type.
+    fn mk_ty_ctor(self, param: Self::ParamCtor, arg: Self::Ty) -> Self::Ty;
     type Symbol: Symbol<Self>;
 
     // Things stored inside of tys

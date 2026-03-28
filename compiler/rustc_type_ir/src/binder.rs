@@ -848,6 +848,14 @@ impl<'a, I: Interner> ArgFolder<'a, I> {
             ),
         };
         let substituted_arg = arg_ty.fold_with(self);
+
+        // Check if this is an identity ctor (the param hasn't been substituted yet).
+        // Identity ctors should not be applied; instead reconstruct the Ctor type.
+        if self.cx.ctor_is_identity(ctor) {
+            return self.cx.mk_ty_ctor(ctor_param, substituted_arg);
+        }
+
+        // Otherwise, this is a concrete constructor — apply it
         self.cx.apply_ctor(ctor, substituted_arg)
     }
 

@@ -93,6 +93,18 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
         Ty::new_adt(self, self.adt_def(ctor_def.def_id), all_args)
     }
 
+    fn ctor_is_identity(self, ctor: ty::CtorArg<'tcx>) -> bool {
+        let ctor_def = ctor.0.0;
+        // A ctor is identity if its def_id points to a type parameter, not an ADT.
+        // We detect this by checking the DefKind: TypeParam means identity,
+        // anything else (Enum, Struct, etc.) means it's a concrete constructor.
+        matches!(self.def_kind(ctor_def.def_id), DefKind::TyParam)
+    }
+
+    fn mk_ty_ctor(self, param: ty::ParamCtor, arg: Ty<'tcx>) -> Ty<'tcx> {
+        Ty::new_ctor(self, param, arg)
+    }
+
     type Symbol = Symbol;
 
     type ErrorGuaranteed = ErrorGuaranteed;

@@ -810,3 +810,83 @@ Fixed the final ~5% of compilation issues blocking the build:
 1. Run `./x test tests/ui/type-constructors/` to verify end-to-end parsing and type-checking
 2. Debug any test failures
 3. Document final state and remaining scope items (if any)
+
+---
+
+## Session 5 Progress (2026-03-28)
+
+**Foundation Audit Completed — Critical Bug Identified**
+
+Ran test suite: 5 failures across parse, gate, and ICE tests. Launched craft-engineer to audit the implementation foundation before proceeding to individual fixes.
+
+**Audit Finding: CRITICAL ARCHITECTURAL BUG in Identity Substitution**
+
+**The Problem:**
+When identity substitution runs (during type collection, early queries, `mk_param_from_def`), the compiler creates `CtorArg` values that store a **type parameter's DefId** (e.g., DefId of `F`). Later, when `apply_ctor` is called on these identity CtorArgs, it unconditionally invokes `adt_def(ctor_def.def_id)`, which expects an ADT DefId, not a TyParam DefId. This causes the ICE:
+
+```
+thread 'rustc' panicked at compiler/rustc_hir_analysis/src/collect.rs:837:9:
+expected ADT to be an item
+computing ADT definition for `fmap::F`  ← F is a TyParam, not an ADT
+```
+
+**Root Cause:**
+`mk_param_from_def` at `compiler/rustc_middle/src/ty/context.rs:2345` creates:
+```rust
+CtorDef { def_id: param.def_id, args: [] }  // param.def_id = TyParam F, not an ADT
+```
+
+Then `ctor_for_param` in `compiler/rustc_type_ir/src/binder.rs` looks up this CtorArg and calls `apply_ctor`, which calls `adt_def(F_def_id)` — **panic**.
+
+The code does not distinguish between:
+- **Identity CtorArg:** the constructor parameter is still abstract (DefId = the param itself)
+- **Concrete CtorArg:** the constructor parameter was substituted with a real type constructor (DefId = Option, Vec, etc.)
+
+**The Fix (Recommended):**
+
+Modify `ctor_for_param` in `compiler/rustc_type_ir/src/binder.rs` to detect identity CtorArgs:
+
+```rust
+// In ArgFolder::ctor_for_param or similar lookup path:
+let ctor_arg = args[ctor_param.index()];
+
+// Check if this is an identity CtorArg (still abstract)
+if ctor_arg.def_id == ctor_param.def_id {
+    // Reconstruct abstract Ctor with the substituted inner type
+    return self.cx.mk_ty(TyKind::Ctor(ctor_param, substituted_arg));
+}
+
+// Otherwise, this is a concrete constructor — apply it
+return self.cx.apply_ctor(ctor_arg, substituted_arg);
+```
+
+This way:
+- Identity substitutions rebuild `Ctor(F, substituted_arg)`, not calling `apply_ctor`
+- Only concrete constructors (Option, Vec, etc.) reach `apply_ctor`, which calls `adt_def` safely
+- The foundation becomes type-safe: you cannot reach `apply_ctor` with a TyParam DefId
+
+**Secondary Consideration:**
+Consider adding a type-safe wrapper or enum variant to `CtorDef` to make the identity/concrete distinction explicit in the representation, not just in runtime `DefKind` checks. This prevents future bugs.
+
+**Other Findings (not blocking):**
+
+- **Parser lookahead:** The `F<_>` detection in `parse_ty_param` (lines 42-61 of `generics.rs`) appears syntactically correct. The reported parse error "expected one of `,`, `:`, `=`, or `>`" suggests an ordering issue in the parser pipeline, not a lookahead bug. Needs investigation with debug tracing.
+
+- **Representation:** The split between `TyKind::Ctor`, `GenericArgKind::Ctor`, and `ParamCtor` is architecturally sound and well-designed.
+
+- **Sizedness:** `Ctor(F, A)` correctly returns `false` for `is_trivially_sized()`, leaving sizing to the trait solver (which is explicitly deferred for this MVP).
+
+**Next Session Action Items (Priority Order):**
+
+1. **BLOCKING:** Implement the `ctor_for_param` identity detection fix in `compiler/rustc_type_ir/src/binder.rs`
+   - Add the identity check after CtorArg lookup
+   - Return reconstructed `Ctor` for identity, call `apply_ctor` for concrete
+   - Rebuild and test
+
+2. **UNBLOCK TESTS:** Once ICE is fixed, run `./x test tests/ui/type-constructors/` again
+   - Expect: identity substitution cases will no longer ICE
+   - Investigate remaining failures (parser, trait solver)
+
+3. **OPTIONAL:** Add type-safe representation for identity vs. concrete CtorArgs to prevent future mistakes
+
+**Branch state:** `add-hkts` — ready to continue from current commit
