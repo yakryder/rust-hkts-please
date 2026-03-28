@@ -487,7 +487,8 @@ pub(crate) fn spanned_type_di_node<'ll, 'tcx>(
         | ty::Infer(_)
         | ty::Placeholder(_)
         | ty::CoroutineWitness(..)
-        | ty::Error(_) => {
+        | ty::Error(_)
+        | ty::Ctor(..) => {
             bug!("debuginfo: unexpected type in type_di_node(): {:?}", t)
         }
     };

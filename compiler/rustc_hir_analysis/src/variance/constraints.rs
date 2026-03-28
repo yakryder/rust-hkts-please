@@ -209,6 +209,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 GenericArgKind::Const(val) => {
                     self.add_constraints_from_const(current, val, variance_i)
                 }
+                GenericArgKind::Ctor(_) => {
+                    // Constructors don't have variance implications
+                }
             }
         }
     }
@@ -402,6 +405,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 GenericArgKind::Type(ty) => self.add_constraints_from_ty(current, ty, variance_i),
                 GenericArgKind::Const(val) => {
                     self.add_constraints_from_const(current, val, variance)
+                }
+                GenericArgKind::Ctor(_) => {
+                    // Constructors don't have variance implications
                 }
             }
         }

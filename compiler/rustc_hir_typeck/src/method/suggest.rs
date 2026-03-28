@@ -2605,6 +2605,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             }
                             GenericArgKind::Type(_) => self.next_ty_var(DUMMY_SP).into(),
                             GenericArgKind::Const(_) => self.next_const_var(DUMMY_SP).into(),
+                            GenericArgKind::Ctor(_) => arg,
                         }
                     } else {
                         arg

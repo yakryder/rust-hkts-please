@@ -312,7 +312,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for ExportableItemsChecker<'tcx, 'a> {
                 return ControlFlow::Break(ty);
             }
 
-            ty::Alias(..) | ty::Infer(_) | ty::Placeholder(_) | ty::Bound(..) => unreachable!(),
+            ty::Alias(..) | ty::Infer(_) | ty::Placeholder(_) | ty::Bound(..) | ty::Ctor(..) => unreachable!(),
         }
         ControlFlow::Continue(())
     }

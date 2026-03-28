@@ -211,7 +211,7 @@ impl<'tcx> InterpCx<'tcx, CompileTimeMachine<'tcx>> {
                 GenericArgKind::Type(ty) => this.write_generic_type(ty, place),
                 GenericArgKind::Const(c) => this.write_generic_const(c, place),
                 GenericArgKind::Ctor(_) => {
-                    throw_unsupported_op_err!("type constructor in const evaluation")
+                    bug!("type constructor should not appear in const evaluation")
                 }
             }
         })
