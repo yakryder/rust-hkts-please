@@ -2224,6 +2224,9 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
             }
             Res::Def(DefKind::TyParam, def_id) => {
                 assert_eq!(opt_self_ty, None);
+                if let Some(ty) = self.try_lower_ctor_param_use(def_id, path) {
+                    return ty;
+                }
                 let _ = self.prohibit_generic_args(
                     path.segments.iter(),
                     GenericsArgsErrExtend::Param(def_id),
@@ -2333,6 +2336,30 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
             arg => bug!("unexpected bound var resolution for {hir_id:?}: {arg:?}"),
         };
         self.check_param_uses_if_mcg(ty, tcx.hir_span(hir_id), false)
+    }
+
+    /// If `def_id` refers to a `TypeCtor` param and the path has a single type arg,
+    /// lower `F<A>` to `TyKind::Ctor(F, A)`. Returns `None` for ordinary type params.
+    fn try_lower_ctor_param_use(
+        &self,
+        def_id: DefId,
+        path: &hir::Path<'tcx>,
+    ) -> Option<Ty<'tcx>> {
+        let tcx = self.tcx();
+        let parent_def_id = tcx.parent(def_id);
+        let generics = tcx.generics_of(parent_def_id);
+        let param_def = generics.own_params.iter().find(|p| p.def_id == def_id)?;
+        if !matches!(param_def.kind, GenericParamDefKind::TypeCtor) {
+            return None;
+        }
+        let last_seg = path.segments.last()?;
+        let hir_args = last_seg.args?;
+        let [hir::GenericArg::Type(arg_ty)] = hir_args.args else {
+            return None;
+        };
+        let ctor = ty::ParamCtor::for_def(param_def);
+        let arg = self.lower_ty(arg_ty.as_unambig_ty());
+        Some(Ty::new_ctor(tcx, ctor, arg))
     }
 
     /// Lower a const parameter from the HIR to our internal notion of a constant.

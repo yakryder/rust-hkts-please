@@ -248,24 +248,45 @@ All the original agent work from Step 7 is now committed (cb22b70d95e). The prin
 
 **Key insight for next session:** When modifying a core type variant, proactively grep for all match sites rather than discovering them through incremental builds. The pattern `match.*\.kind()` across the codebase reveals the scope upfront.
 
-#### Use-site lowering — still TODO
+#### Use-site lowering ✅ DONE
 
-The actual `F<A>` → `TyKind::Ctor` lowering in `hir_ty_lowering/mod.rs` is **not yet implemented**. This requires:
-- Look up `GenericParamDef` by `def_id`, check `.kind == TypeCtor`
-- Extract single type arg from path's `GenericArgs`
-- Return `Ty::new_ctor(tcx, ParamCtor::for_def(param_def), lowered_arg)`
+`F<A>` → `TyKind::Ctor(ParamCtor, Ty)` is now wired in `hir_ty_lowering/mod.rs`:
+- `try_lower_ctor_param_use` intercepts `Res::Def(DefKind::TyParam, def_id)` when the param's `GenericParamDefKind` is `TypeCtor`
+- Extracts the single type arg via `as_unambig_ty()`, lowers it, returns `Ty::new_ctor(tcx, ParamCtor::for_def(param_def), arg)`
+- Ordinary type params fall through to `prohibit_generic_args` as before
+
+`Ty::new_ctor(tcx, ctor, arg)` added to `sty.rs` (the PLAN falsely claimed this was done in Step 7).
+
+**Currently dead code:** `GenericArgs::identity_for_item` calls `mk_param_from_def` for every param during type collection — the `bug!()` there fires before our lowering runs. No test can exercise this path until Step 8 fixes `mk_param_from_def`.
 
 ### Step 8: Substitution + `GenericArgKind::Ctor`
 
-**Constructor to `TyCtxt`:** `Ty::new_ctor` already done (Step 7 agent work).
+**The hard problem:** when `F` (a `TypeCtor` param) is substituted with `Option`, `Ctor(F, A)` must become `Option<A>`. Two coupled problems:
 
-**The hard problem:** when `F` (a `TypeCtor` param) is substituted with `Option`, `Ctor(F, A)` must become `Option<A>`. This requires:
-1. A way to encode "bare constructor" as a `GenericArg` — either a new `GenericArgKind::Ctor(DefId, &[GenericArg])` variant or a sentinel `Ty`.
-2. The `TypeFoldable` impl for `Ctor` to do the application during substitution.
+1. `mk_param_from_def` needs to return a valid `GenericArg` for TypeCtor params (currently `bug!()`). This is the identity substitution — `F` maps to itself.
+2. The `TypeFoldable` impl for `Ctor` must do the application during substitution.
 
-The `bug!()` in `var_for_def` (infer/mod.rs) and `mk_param_from_def` (context.rs) are the trip-wires that will fire until this is done.
+**Design decision (made this session):** `GenericArgKind::Ctor(DefId, &'tcx [GenericArg<'tcx>])` is correct — not a sentinel. Reasons:
+- Tag `0b11` is free in the existing 2-bit packing scheme; no representation change needed
+- Kind-correct: `Type(ty)` has kind `*`, `Ctor(...)` has kind `* -> *` — conflating them in one variant would be a lie
+- Exhaustive match breakage forces every site to handle the new case explicitly
+- ~400 match sites across 104 files (grep first, build second — Step 7 methodology)
 
-Design decision for next session: sentinel `Ty` (simpler, avoids new variant) vs `GenericArgKind::Ctor` (cleaner, more correct). Lean toward sentinel for MVP — a `TyKind::Ctor` with index `u32::MAX` as a "this IS the constructor" marker, or encode as the ADT def with a `_` hole. Think carefully before committing.
+**Concrete shape:**
+```rust
+// New interned struct
+pub struct CtorDef<'tcx> {
+    pub def_id: DefId,
+    pub args: &'tcx List<GenericArg<'tcx>>,  // captured args; empty for MVP unary-only
+}
+
+const CTOR_TAG: usize = 0b11;
+GenericArgKind::Ctor(Interned<'tcx, CtorDef<'tcx>>)
+```
+
+**Substitution fold:** `TyKind::Ctor(F_param, arg)` → look up `F_param` in args → get `GenericArgKind::Ctor(ctor_def)` → return `Ty::new_adt(tcx, ctor_def.def_id, ctor_def.args + [arg])`.
+
+**Trip-wires that will fire:** `mk_param_from_def` (context.rs) and `var_for_def` (infer/mod.rs).
 
 ---
 

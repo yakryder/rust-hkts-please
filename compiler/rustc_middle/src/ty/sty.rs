@@ -452,6 +452,10 @@ impl<'tcx> Ty<'tcx> {
         Ty::new(tcx, Param(ParamTy { index, name }))
     }
 
+    pub fn new_ctor(tcx: TyCtxt<'tcx>, ctor: ParamCtor, arg: Ty<'tcx>) -> Ty<'tcx> {
+        Ty::new(tcx, Ctor(ctor, arg))
+    }
+
     #[inline]
     pub fn new_bound(
         tcx: TyCtxt<'tcx>,
