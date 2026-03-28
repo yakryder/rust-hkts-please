@@ -204,6 +204,7 @@ impl<'tcx> Stable<'tcx> for ty::GenericArgKind<'tcx> {
             }
             ty::GenericArgKind::Type(ty) => GenericArgKind::Type(ty.stable(tables, cx)),
             ty::GenericArgKind::Const(cnst) => GenericArgKind::Const(cnst.stable(tables, cx)),
+            ty::GenericArgKind::Ctor(_) => todo!("public API for ctor args not yet supported"),
         }
     }
 }
@@ -455,8 +456,10 @@ impl<'tcx> Stable<'tcx> for ty::TyKind<'tcx> {
                 TyKind::Alias(alias_kind.stable(tables, cx), alias_ty.stable(tables, cx))
             }
             ty::Param(param_ty) => TyKind::Param(param_ty.stable(tables, cx)),
-            ty::Ctor(param_ctor, ty) => {
-                TyKind::Ctor(param_ctor.stable(tables, cx), ty.stable(tables, cx))
+            ty::Ctor(..) => {
+                // TODO: Public API for type constructor types not yet supported.
+                // For now, defer to the deferred error.
+                todo!("public API for ctor types not yet supported")
             }
             ty::Bound(ty::BoundVarIndexKind::Canonical, _) => {
                 unreachable!()

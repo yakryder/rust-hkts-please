@@ -1590,7 +1590,7 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
             Rib::new(RibKind::ForwardGenericParamBan(ForwardGenericParamBanReason::Default));
         for param in params.iter() {
             match param.kind {
-                GenericParamKind::Type { .. } => {
+                GenericParamKind::Type { .. } | GenericParamKind::TypeCtor => {
                     forward_ty_ban_rib
                         .bindings
                         .insert(Ident::with_dummy_span(param.ident.name), Res::Err);
@@ -1662,6 +1662,9 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
                         let i = &Ident::with_dummy_span(param.ident.name);
                         forward_ty_ban_rib.bindings.swap_remove(i);
                         forward_ty_ban_rib_const_param_ty.bindings.swap_remove(i);
+                    }
+                    GenericParamKind::TypeCtor => {
+                        // TypeCtor has no bounds and no default; nothing to visit.
                     }
                     GenericParamKind::Const { ref ty, span: _, ref default } => {
                         // Const parameters can't have param bounds.
@@ -3089,7 +3092,7 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
                                 self.record_lifetime_param(param.id, LifetimeRes::Error(guar));
                                 continue;
                             }
-                            GenericParamKind::Type { .. } => &mut function_type_rib,
+                            GenericParamKind::Type { .. } | GenericParamKind::TypeCtor => &mut function_type_rib,
                             GenericParamKind::Const { .. } => &mut function_value_rib,
                         };
 
@@ -3139,7 +3142,7 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
 
                 // Plain insert (no renaming).
                 let (rib, def_kind) = match param.kind {
-                    GenericParamKind::Type { .. } => (&mut function_type_rib, DefKind::TyParam),
+                    GenericParamKind::Type { .. } | GenericParamKind::TypeCtor => (&mut function_type_rib, DefKind::TyParam),
                     GenericParamKind::Const { .. } => {
                         (&mut function_value_rib, DefKind::ConstParam)
                     }
@@ -5498,6 +5501,10 @@ fn required_generic_args_suggestion(generics: &ast::Generics) -> Option<String> 
                 } else {
                     None
                 }
+            }
+            ast::GenericParamKind::TypeCtor => {
+                // TypeCtor has no default, so it's required.
+                Some("_")
             }
         })
         .collect::<Vec<_>>();

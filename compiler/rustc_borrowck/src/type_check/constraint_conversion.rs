@@ -207,6 +207,9 @@ impl<'a, 'tcx> ConstraintConversion<'a, 'tcx> {
                     }
 
                     GenericArgKind::Const(_) => unreachable!(),
+                    GenericArgKind::Ctor(_) => {
+                        // Ctor has no outlives constraints
+                    }
                 }
             }
 

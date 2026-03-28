@@ -182,6 +182,9 @@ where
                     opt_values[bc.var()] = Some(*original_value);
                 }
             }
+            ty::GenericArgKind::Ctor(_) => {
+                // Ctors are never bound variables; nothing to do.
+            }
         }
     }
     CanonicalVarValues::instantiate(delegate.cx(), response.var_kinds, |var_values, kind| {
@@ -258,6 +261,9 @@ fn register_region_constraints<D, I>(
             ty::GenericArgKind::Lifetime(lhs) => delegate.sub_regions(rhs, lhs, span),
             ty::GenericArgKind::Type(lhs) => delegate.register_ty_outlives(lhs, rhs, span),
             ty::GenericArgKind::Const(_) => panic!("const outlives: {lhs:?}: {rhs:?}"),
+            ty::GenericArgKind::Ctor(_) => {
+                // Ctors carry no lifetime information; no outlives constraint.
+            }
         }
     }
 }

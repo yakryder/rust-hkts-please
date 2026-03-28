@@ -732,7 +732,8 @@ impl<'tcx> MirBorrowckCtxt<'_, '_, 'tcx> {
                 (
                     GenericArgKind::Lifetime(_)
                     | GenericArgKind::Type(_)
-                    | GenericArgKind::Const(_),
+                    | GenericArgKind::Const(_)
+                    | GenericArgKind::Ctor(_),
                     _,
                 ) => {
                     self.dcx().span_delayed_bug(

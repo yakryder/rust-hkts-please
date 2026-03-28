@@ -141,6 +141,11 @@ impl<'tcx> rustc_type_ir::InferCtxtLike for InferCtxt<'tcx> {
                     true
                 }
             }
+            ty::GenericArgKind::Ctor(_) => {
+                // Ctor args are always concrete (no inference variables).
+                // They cannot change.
+                false
+            }
         }
     }
 

@@ -642,6 +642,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                             GenericArgKind::Lifetime(_) => bug!("unexpected lifetime"),
                             GenericArgKind::Type(_) => self.next_ty_var(DUMMY_SP).into(),
                             GenericArgKind::Const(_) => self.next_const_var(DUMMY_SP).into(),
+                            GenericArgKind::Ctor(_) => arg,
                         }
                     }))
                     .unwrap();
@@ -894,6 +895,7 @@ impl<'a, 'tcx> FindInferSourceVisitor<'a, 'tcx> {
                     GenericArgKind::Lifetime(_) => 0, // erased
                     GenericArgKind::Type(ty) => self.ty_cost(ty),
                     GenericArgKind::Const(_) => 3, // some non-zero value
+                    GenericArgKind::Ctor(_) => 3, // constructor param
                 }
             }
             fn ty_cost(self, ty: Ty<'tcx>) -> usize {
@@ -1046,6 +1048,10 @@ impl<'a, 'tcx> FindInferSourceVisitor<'a, 'tcx> {
                         // unevaluated constants.
                         walker.skip_current_subtree();
                     }
+                }
+                GenericArgKind::Ctor(_) => {
+                    // Ctor args are not user-nameable yet.
+                    walker.skip_current_subtree();
                 }
             }
         }

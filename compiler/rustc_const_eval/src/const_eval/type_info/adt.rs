@@ -210,6 +210,9 @@ impl<'tcx> InterpCx<'tcx, CompileTimeMachine<'tcx>> {
                 GenericArgKind::Lifetime(region) => this.write_generic_lifetime(region, place),
                 GenericArgKind::Type(ty) => this.write_generic_type(ty, place),
                 GenericArgKind::Const(c) => this.write_generic_const(c, place),
+                GenericArgKind::Ctor(_) => {
+                    throw_unsupported_op_err!("type constructor in const evaluation")
+                }
             }
         })
     }

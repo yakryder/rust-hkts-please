@@ -1581,6 +1581,7 @@ impl<'tcx> TyOrConstInferVar {
             GenericArgKind::Type(ty) => Self::maybe_from_ty(ty),
             GenericArgKind::Const(ct) => Self::maybe_from_const(ct),
             GenericArgKind::Lifetime(_) => None,
+            GenericArgKind::Ctor(_) => None,
         }
     }
 

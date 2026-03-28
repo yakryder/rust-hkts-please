@@ -412,6 +412,10 @@ fn bounds_from_generic_predicates<'tcx>(
                     region.to_string()
                 }
             }
+            ty::GenericArgKind::Ctor(_) => {
+                // Type constructor parameter
+                "?F".to_string()
+            }
         })
         .collect::<Vec<_>>();
     for (ty, bounds) in types.into_iter() {

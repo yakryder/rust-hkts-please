@@ -467,6 +467,9 @@ impl<'tcx> InferCtxt<'tcx> {
                         opt_values[b.var] = Some(*original_value);
                     }
                 }
+                GenericArgKind::Ctor(_) => {
+                    bug!("ctor in canonical query response — not yet supported")
+                }
             }
         }
 

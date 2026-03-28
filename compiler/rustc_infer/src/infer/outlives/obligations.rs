@@ -95,6 +95,9 @@ impl<'tcx> InferCtxt<'tcx> {
                 self.register_type_outlives_constraint(ty1, r2, cause);
             }
             ty::GenericArgKind::Const(_) => unreachable!(),
+            ty::GenericArgKind::Ctor(_) => {
+                // A ctor arg contains no lifetime information; no outlives constraint needed.
+            }
         }
     }
 
@@ -552,6 +555,9 @@ where
                 }
                 GenericArgKind::Const(_) => {
                     // Const parameters don't impose constraints.
+                }
+                GenericArgKind::Ctor(_) => {
+                    // Ctor args contain no lifetime information; no constraints.
                 }
             }
         }

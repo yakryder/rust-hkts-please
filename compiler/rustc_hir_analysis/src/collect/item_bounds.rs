@@ -209,6 +209,10 @@ fn remap_gat_vars_and_recurse_into_nested_projections<'tcx>(
                 };
                 mapping.insert(bv.var, tcx.mk_param_from_def(param))
             }
+            ty::GenericArgKind::Ctor(_) => {
+                // Constructors aren't valid in GATs
+                return None;
+            }
         };
 
         if existing.is_some() {

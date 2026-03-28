@@ -1582,6 +1582,10 @@ impl<'tcx> Resolver<'_, 'tcx> {
                             Some("_")
                         }
                     }
+                    ty::GenericParamDefKind::TypeCtor => {
+                        // TypeCtor has no default; it's always required.
+                        Some("_")
+                    }
                 })
                 .collect::<Vec<_>>();
 

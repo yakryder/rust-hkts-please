@@ -688,6 +688,9 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                         value.push_highlighted(type_arg.to_string());
                     }
                 }
+                ty::GenericArgKind::Ctor(_) => {
+                    value.push_normal(arg.to_string());
+                }
             }
         }
 
@@ -1150,6 +1153,10 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                             ty::GenericArgKind::Const(ca1) => {
                                 let ca2 = arg2.expect_const();
                                 maybe_highlight(ca1, ca2, &mut values, self.tcx);
+                            }
+                            ty::GenericArgKind::Ctor(_) => {
+                                values.0.push_normal(arg1.to_string());
+                                values.1.push_normal(arg2.to_string());
                             }
                         }
                     }

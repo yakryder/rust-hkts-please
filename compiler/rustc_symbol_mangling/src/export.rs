@@ -150,6 +150,10 @@ impl<'tcx> AbiHashStable<'tcx> for ty::GenericArgKind<'tcx> {
         match self {
             ty::GenericArgKind::Type(t) => t.abi_hash(tcx, hasher),
             ty::GenericArgKind::Lifetime(_) | ty::GenericArgKind::Const(_) => unimplemented!(),
+            ty::GenericArgKind::Ctor(_) => {
+                // Constructors are not instantiated in exported items; should not reach here.
+                unimplemented!("ctor in abi_hash")
+            }
         }
     }
 }

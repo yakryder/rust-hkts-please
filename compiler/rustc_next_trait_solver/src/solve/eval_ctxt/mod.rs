@@ -539,6 +539,7 @@ where
                             ty::ConstKind::Param(_) | ty::ConstKind::Placeholder(_) => false,
                             _ => unreachable!("unexpected orig_value: {ct:?}"),
                         },
+                        ty::GenericArgKind::Ctor(_) => false,
                     });
 
                     Some(GoalStalledOn {

@@ -1469,6 +1469,7 @@ pub enum GenericParamDefKind {
     Lifetime,
     Type { has_default: bool, synthetic: bool },
     Const { has_default: bool },
+    TypeCtor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

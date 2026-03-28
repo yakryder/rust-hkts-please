@@ -94,6 +94,7 @@ pub fn opaque_type_has_defining_use_args<'tcx>(
             },
             GenericArgKind::Type(ty) => matches!(ty.kind(), ty::Param(_)),
             GenericArgKind::Const(ct) => matches!(ct.kind(), ty::ConstKind::Param(_)),
+            GenericArgKind::Ctor(_) => false,
         };
 
         if arg_is_param {

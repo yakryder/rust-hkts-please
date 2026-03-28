@@ -497,6 +497,9 @@ fn extract_def_id_from_arg<'tcx>(
             };
             generics.const_param(param_ct, tcx).def_id
         }
+        ty::GenericArgKind::Ctor(_) => {
+            bug!("unexpectedly encountered ctor in extract_def_id_from_arg")
+        }
     }
 }
 

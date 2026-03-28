@@ -92,6 +92,9 @@ fn encode_args<'tcx>(
                         tcx.type_of(def_generics.param_at(n, tcx).def_id).instantiate_identity();
                     s.push_str(&encode_const(tcx, c, ct_ty, dict, options));
                 }
+                GenericArgKind::Ctor(_) => {
+                    bug!("unexpectedly encountered type constructor in CFI")
+                }
             }
         }
         s.push('E');

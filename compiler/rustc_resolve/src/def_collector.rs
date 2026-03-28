@@ -333,6 +333,7 @@ impl<'a, 'ra, 'tcx> visit::Visitor<'a> for DefCollector<'a, 'ra, 'tcx> {
             GenericParamKind::Lifetime { .. } => DefKind::LifetimeParam,
             GenericParamKind::Type { .. } => DefKind::TyParam,
             GenericParamKind::Const { .. } => DefKind::ConstParam,
+            GenericParamKind::TypeCtor => DefKind::TyParam,
         };
         self.create_def(param.id, Some(param.ident.name), def_kind, param.ident.span);
 

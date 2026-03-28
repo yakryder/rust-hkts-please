@@ -950,6 +950,11 @@ impl<'tcx> Printer<'tcx> for V0SymbolMangler<'tcx> {
                     self.push("K");
                     c.print(self)?;
                 }
+                GenericArgKind::Ctor(ctor) => {
+                    // Mangle a type constructor as a path to its definition.
+                    self.push("C");
+                    self.print_def_path(ctor.0.0.def_id, &[])?;
+                }
             }
         }
         self.push("E");
