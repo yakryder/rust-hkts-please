@@ -95,6 +95,7 @@ impl<I: Interner> TypeVisitor<I> for OutlivesCollector<'_, I> {
                         ty::GenericArgKind::Type(_) | ty::GenericArgKind::Const(_) => {
                             child.visit_with(self);
                         }
+                        ty::GenericArgKind::Ctor(_) => {}
                     }
                 }
             }

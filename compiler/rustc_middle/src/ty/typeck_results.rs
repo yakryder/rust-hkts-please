@@ -819,6 +819,9 @@ impl<'tcx> IsIdentity for CanonicalUserType<'tcx> {
                             }
                             _ => false,
                         },
+
+                        // Ctor args have no bound var form; not identity
+                        GenericArgKind::Ctor(_) => false,
                     }
                 })
             }

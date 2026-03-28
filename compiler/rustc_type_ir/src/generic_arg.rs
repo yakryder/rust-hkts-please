@@ -15,6 +15,8 @@ pub enum GenericArgKind<I: Interner> {
     Lifetime(I::Region),
     Type(I::Ty),
     Const(I::Const),
+    /// A concrete type constructor of kind `* -> *`, e.g. `Option`.
+    Ctor(I::CtorArg),
 }
 
 impl<I: Interner> Eq for GenericArgKind<I> {}

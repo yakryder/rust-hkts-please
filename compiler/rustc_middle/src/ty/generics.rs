@@ -102,9 +102,14 @@ impl GenericParamDef {
             ty::GenericParamDefKind::Lifetime => ty::Region::new_error_misc(tcx).into(),
             ty::GenericParamDefKind::Type { .. } => Ty::new_misc_error(tcx).into(),
             ty::GenericParamDefKind::Const { .. } => ty::Const::new_misc_error(tcx).into(),
-            // No GenericArgKind::Ctor yet (Step 8); use a type error as a placeholder
-            // so error recovery code doesn't panic.
-            ty::GenericParamDefKind::TypeCtor => Ty::new_misc_error(tcx).into(),
+            ty::GenericParamDefKind::TypeCtor => {
+                // Error recovery: create a CtorArg with a dummy DefId.
+                // This is only hit during error recovery paths.
+                tcx.mk_ctor_arg(ty::CtorDef {
+                    def_id: self.def_id,
+                    args: tcx.mk_args(&[]),
+                }).into()
+            }
         }
     }
 }

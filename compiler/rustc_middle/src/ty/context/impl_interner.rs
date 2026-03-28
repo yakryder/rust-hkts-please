@@ -83,6 +83,16 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
     type FnInputTys = &'tcx [Ty<'tcx>];
     type ParamTy = ParamTy;
     type ParamCtor = ParamCtor;
+    type CtorArg = ty::CtorArg<'tcx>;
+
+    fn apply_ctor(self, ctor: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
+        let ctor_def = ctor.0.0;
+        let all_args = self.mk_args_from_iter(
+            ctor_def.args.iter().chain(std::iter::once(arg.into())),
+        );
+        Ty::new_adt(self, self.adt_def(ctor_def.def_id), all_args)
+    }
+
     type Symbol = Symbol;
 
     type ErrorGuaranteed = ErrorGuaranteed;

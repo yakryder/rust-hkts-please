@@ -26,6 +26,7 @@ impl<I: Interner> OpaqueTypeKey<I> {
             |(i, (arg, v))| match (arg.kind(), v) {
                 (_, ty::Invariant) => Some((i, arg)),
                 (ty::GenericArgKind::Lifetime(_), ty::Bivariant) => None,
+                (ty::GenericArgKind::Ctor(_), _) => None,
                 _ => panic!("unexpected opaque type arg variance"),
             },
         )

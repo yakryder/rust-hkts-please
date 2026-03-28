@@ -22,6 +22,8 @@ use tracing::instrument;
 use ty::util::IntTypeExt;
 
 use super::GenericParamDefKind;
+use rustc_data_structures::intern::Interned;
+
 use crate::infer::canonical::Canonical;
 use crate::traits::ObligationCause;
 use crate::ty::InferTy::*;
@@ -323,6 +325,41 @@ impl ParamCtor {
 
     pub fn for_def(def: &ty::GenericParamDef) -> ParamCtor {
         ParamCtor::new(def.index, def.name)
+    }
+}
+
+/// A concrete type constructor of kind `* -> *`, used as a generic argument.
+/// For example, `Option` when substituted for a type constructor parameter `F<_>`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable)]
+#[derive(HashStable)]
+pub struct CtorDef<'tcx> {
+    pub def_id: DefId,
+    pub args: GenericArgsRef<'tcx>,
+}
+
+/// Newtype wrapper for an interned `CtorDef`, used as `GenericArgKind::Ctor`.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct CtorArg<'tcx>(pub Interned<'tcx, CtorDef<'tcx>>);
+
+impl<'tcx, E: crate::ty::codec::TyEncoder<'tcx>> rustc_serialize::Encodable<E> for CtorArg<'tcx> {
+    fn encode(&self, e: &mut E) {
+        self.0.0.encode(e);
+    }
+}
+
+impl<'tcx, D: crate::ty::codec::TyDecoder<'tcx>> rustc_serialize::Decodable<D> for CtorArg<'tcx> {
+    fn decode(d: &mut D) -> Self {
+        let ctor_def = CtorDef::decode(d);
+        d.interner().mk_ctor_arg(ctor_def)
+    }
+}
+
+impl<'tcx, CTX> rustc_data_structures::stable_hasher::HashStable<CTX> for CtorArg<'tcx>
+where
+    CtorDef<'tcx>: rustc_data_structures::stable_hasher::HashStable<CTX>,
+{
+    fn hash_stable(&self, hcx: &mut CTX, hasher: &mut rustc_data_structures::stable_hasher::StableHasher) {
+        self.0.hash_stable(hcx, hasher);
     }
 }
 

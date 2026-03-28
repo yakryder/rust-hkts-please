@@ -164,6 +164,7 @@ pub struct CtxtInterners<'tcx> {
     valtree: InternedSet<'tcx, ty::ValTreeKind<TyCtxt<'tcx>>>,
     patterns: InternedSet<'tcx, List<ty::Pattern<'tcx>>>,
     outlives: InternedSet<'tcx, List<ty::ArgOutlivesPredicate<'tcx>>>,
+    ctor_def: InternedSet<'tcx, ty::CtorDef<'tcx>>,
 }
 
 impl<'tcx> CtxtInterners<'tcx> {
@@ -201,6 +202,7 @@ impl<'tcx> CtxtInterners<'tcx> {
             valtree: InternedSet::with_capacity(N),
             patterns: InternedSet::with_capacity(N),
             outlives: InternedSet::with_capacity(N),
+            ctor_def: InternedSet::with_capacity(N),
         }
     }
 
@@ -2005,6 +2007,27 @@ impl<'tcx, T: Hash> Hash for InternedInSet<'tcx, ListWithCachedTypeInfo<T>> {
     }
 }
 
+// Manual InternedInSet impls for CtorDef (not using direct_interners! due to path syntax)
+impl<'tcx> Borrow<ty::CtorDef<'tcx>> for InternedInSet<'tcx, ty::CtorDef<'tcx>> {
+    fn borrow(&self) -> &ty::CtorDef<'tcx> {
+        &self.0
+    }
+}
+
+impl<'tcx> PartialEq for InternedInSet<'tcx, ty::CtorDef<'tcx>> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<'tcx> Eq for InternedInSet<'tcx, ty::CtorDef<'tcx>> {}
+
+impl<'tcx> Hash for InternedInSet<'tcx, ty::CtorDef<'tcx>> {
+    fn hash<H: Hasher>(&self, s: &mut H) {
+        self.0.hash(s)
+    }
+}
+
 macro_rules! direct_interners {
     ($($name:ident: $vis:vis $method:ident($ty:ty): $ret_ctor:ident -> $ret_ty:ty,)+) => {
         $(impl<'tcx> Borrow<$ty> for InternedInSet<'tcx, $ty> {
@@ -2218,7 +2241,8 @@ impl<'tcx> TyCtxt<'tcx> {
             match (&param.kind, arg.kind()) {
                 (ty::GenericParamDefKind::Type { .. }, ty::GenericArgKind::Type(_))
                 | (ty::GenericParamDefKind::Lifetime, ty::GenericArgKind::Lifetime(_))
-                | (ty::GenericParamDefKind::Const { .. }, ty::GenericArgKind::Const(_)) => {}
+                | (ty::GenericParamDefKind::Const { .. }, ty::GenericArgKind::Const(_))
+                | (ty::GenericParamDefKind::TypeCtor, ty::GenericArgKind::Ctor(_)) => {}
                 _ => return false,
             }
         }
@@ -2297,6 +2321,14 @@ impl<'tcx> TyCtxt<'tcx> {
         )
     }
 
+    pub fn mk_ctor_arg(self, v: ty::CtorDef<'tcx>) -> ty::CtorArg<'tcx> {
+        ty::CtorArg(Interned::new_unchecked(
+            self.interners.ctor_def.intern(v, |v| {
+                InternedInSet(self.interners.arena.alloc(v))
+            }).0,
+        ))
+    }
+
     pub fn mk_param_from_def(self, param: &ty::GenericParamDef) -> GenericArg<'tcx> {
         match param.kind {
             GenericParamDefKind::Lifetime => {
@@ -2307,10 +2339,13 @@ impl<'tcx> TyCtxt<'tcx> {
                 ty::Const::new_param(self, ParamConst { index: param.index, name: param.name })
                     .into()
             }
-            // GenericArgKind::Ctor does not exist yet (Step 8); no identity arg
-            // can be produced for a TypeCtor param at this stage.
             GenericParamDefKind::TypeCtor => {
-                bug!("mk_param_from_def: TypeCtor params not yet supported (Step 8)")
+                // Identity arg: F maps to the CtorDef for F's own DefId,
+                // with no captured args (it's a param, not a partial application).
+                self.mk_ctor_arg(ty::CtorDef {
+                    def_id: param.def_id,
+                    args: self.mk_args(&[]),
+                }).into()
             }
         }
     }

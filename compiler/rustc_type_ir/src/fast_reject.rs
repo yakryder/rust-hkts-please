@@ -267,6 +267,7 @@ impl<I: Interner, const INSTANTIATE_LHS_WITH_INFER: bool, const INSTANTIATE_RHS_
                 (ty::GenericArgKind::Const(obl), ty::GenericArgKind::Const(imp)) => {
                     self.consts_may_unify_inner(obl, imp)
                 }
+                (ty::GenericArgKind::Ctor(c1), ty::GenericArgKind::Ctor(c2)) => c1 == c2,
                 _ => panic!("kind mismatch: {obl:?} {imp:?}"),
             }
         })

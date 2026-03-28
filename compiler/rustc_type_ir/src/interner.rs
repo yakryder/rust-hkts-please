@@ -126,6 +126,12 @@ pub trait Interner:
     type ParamTy: ParamLike;
     /// A type constructor parameter, e.g. `F` in `fn foo<F<_>, A>(x: F<A>)`.
     type ParamCtor: ParamLike;
+    /// A concrete type constructor argument (kind `* -> *`) that can be
+    /// substituted for a `TypeCtor` parameter. E.g. `Option` in `fmap::<Option, ...>`.
+    type CtorArg: Copy + Debug + Hash + Eq;
+    /// Apply a concrete constructor to a type argument, producing a type of kind `*`.
+    /// E.g. `apply_ctor(Option_ctor, i32)` → `Option<i32>`.
+    fn apply_ctor(self, ctor: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
     type Symbol: Symbol<Self>;
 
     // Things stored inside of tys

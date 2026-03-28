@@ -103,7 +103,7 @@ pub use self::region::{
 pub use self::sty::{
     AliasTy, Article, Binder, BoundConst, BoundRegion, BoundRegionKind, BoundTy, BoundTyKind,
     BoundVariableKind, CanonicalPolyFnSig, CoroutineArgsExt, EarlyBinder, FnSig, InlineConstArgs,
-    InlineConstArgsParts, ParamConst, ParamCtor, ParamTy, PlaceholderConst, PlaceholderRegion,
+    InlineConstArgsParts, CtorArg, CtorDef, ParamConst, ParamCtor, ParamTy, PlaceholderConst, PlaceholderRegion,
     PlaceholderType, PolyFnSig, TyKind, TypeAndMut, TypingMode, UpvarArgs,
 };
 pub use self::trait_def::TraitDef;

@@ -3390,6 +3390,9 @@ define_print_and_forward_display! {
             GenericArgKind::Lifetime(lt) => lt.print(p)?,
             GenericArgKind::Type(ty) => ty.print(p)?,
             GenericArgKind::Const(ct) => ct.print(p)?,
+            GenericArgKind::Ctor(ctor) => {
+                p.print_def_path(ctor.0.0.def_id, &[])?;
+            }
         }
     }
 }

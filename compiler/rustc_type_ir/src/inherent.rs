@@ -321,6 +321,7 @@ pub trait GenericArg<I: Interner<GenericArg = Self>>:
             ty::GenericArgKind::Lifetime(_) => None,
             ty::GenericArgKind::Type(ty) => Some(ty.into()),
             ty::GenericArgKind::Const(ct) => Some(ct.into()),
+            ty::GenericArgKind::Ctor(_) => None,
         }
     }
 
@@ -353,6 +354,7 @@ pub trait GenericArg<I: Interner<GenericArg = Self>>:
             ty::GenericArgKind::Lifetime(_) => false,
             ty::GenericArgKind::Type(ty) => ty.is_ty_var(),
             ty::GenericArgKind::Const(ct) => ct.is_ct_var(),
+            ty::GenericArgKind::Ctor(_) => false,
         }
     }
 }

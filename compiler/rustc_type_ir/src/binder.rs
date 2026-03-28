@@ -731,6 +731,7 @@ impl<'a, I: Interner> TypeFolder<I> for ArgFolder<'a, I> {
 
         match t.kind() {
             ty::Param(p) => self.ty_for_param(p, t),
+            ty::Ctor(ctor_param, arg_ty) => self.ctor_for_param(ctor_param, arg_ty),
             _ => t.super_fold_with(self),
         }
     }
@@ -830,6 +831,24 @@ impl<'a, I: Interner> ArgFolder<'a, I> {
             p.index(),
             self.args,
         )
+    }
+
+    fn ctor_for_param(&mut self, ctor_param: I::ParamCtor, arg_ty: I::Ty) -> I::Ty {
+        let opt_ctor = self.args.get(ctor_param.index() as usize).map(|a| a.kind());
+        let ctor = match opt_ctor {
+            Some(ty::GenericArgKind::Ctor(ctor)) => ctor,
+            Some(other) => panic!(
+                "expected ctor for `{ctor_param:?}` (index {}) but found {other:?}",
+                ctor_param.index()
+            ),
+            None => panic!(
+                "ctor param `{ctor_param:?}` (index {}) out of range, args={:?}",
+                ctor_param.index(),
+                self.args
+            ),
+        };
+        let substituted_arg = arg_ty.fold_with(self);
+        self.cx.apply_ctor(ctor, substituted_arg)
     }
 
     #[cold]

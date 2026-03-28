@@ -159,6 +159,9 @@ impl<'tcx> Relate<TyCtxt<'tcx>> for ty::GenericArg<'tcx> {
             (ty::GenericArgKind::Const(a_ct), ty::GenericArgKind::Const(b_ct)) => {
                 Ok(relation.relate(a_ct, b_ct)?.into())
             }
+            (ty::GenericArgKind::Ctor(a_ctor), ty::GenericArgKind::Ctor(b_ctor)) => {
+                if a_ctor == b_ctor { Ok(a) } else { bug!("ctor mismatch: {a_ctor:?} vs {b_ctor:?}") }
+            }
             _ => bug!("impossible case reached: can't relate: {a:?} with {b:?}"),
         }
     }

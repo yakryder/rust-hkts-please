@@ -159,6 +159,7 @@ const TAG_MASK: usize = 0b11;
 const TYPE_TAG: usize = 0b00;
 const REGION_TAG: usize = 0b01;
 const CONST_TAG: usize = 0b10;
+const CTOR_TAG: usize = 0b11;
 
 #[extension(trait GenericArgPackExt<'tcx>)]
 impl<'tcx> GenericArgKind<'tcx> {
@@ -179,6 +180,11 @@ impl<'tcx> GenericArgKind<'tcx> {
                 // Ensure we can use the tag bits.
                 assert_eq!(align_of_val(&*ct.0.0) & TAG_MASK, 0);
                 (CONST_TAG, NonNull::from(ct.0.0).cast())
+            }
+            GenericArgKind::Ctor(ctor) => {
+                // Ensure we can use the tag bits.
+                assert_eq!(align_of_val(ctor.0.0) & TAG_MASK, 0);
+                (CTOR_TAG, NonNull::from(ctor.0.0).cast())
             }
         };
 
@@ -204,6 +210,13 @@ impl<'tcx> From<ty::Const<'tcx>> for GenericArg<'tcx> {
     #[inline]
     fn from(c: ty::Const<'tcx>) -> GenericArg<'tcx> {
         GenericArgKind::Const(c).pack()
+    }
+}
+
+impl<'tcx> From<ty::CtorArg<'tcx>> for GenericArg<'tcx> {
+    #[inline]
+    fn from(ctor: ty::CtorArg<'tcx>) -> GenericArg<'tcx> {
+        GenericArgKind::Ctor(ctor).pack()
     }
 }
 
@@ -234,6 +247,9 @@ impl<'tcx> GenericArg<'tcx> {
                 ))),
                 CONST_TAG => GenericArgKind::Const(ty::Const(Interned::new_unchecked(
                     ptr.cast::<WithCachedTypeInfo<ty::ConstKind<'tcx>>>().as_ref(),
+                ))),
+                CTOR_TAG => GenericArgKind::Ctor(ty::CtorArg(Interned::new_unchecked(
+                    ptr.cast::<ty::CtorDef<'tcx>>().as_ref(),
                 ))),
                 _ => intrinsics::unreachable(),
             }
@@ -267,10 +283,23 @@ impl<'tcx> GenericArg<'tcx> {
     #[inline]
     pub fn as_term(self) -> Option<ty::Term<'tcx>> {
         match self.kind() {
-            GenericArgKind::Lifetime(_) => None,
+            GenericArgKind::Lifetime(_) | GenericArgKind::Ctor(_) => None,
             GenericArgKind::Type(ty) => Some(ty.into()),
             GenericArgKind::Const(ct) => Some(ct.into()),
         }
+    }
+
+    #[inline]
+    pub fn as_ctor(self) -> Option<ty::CtorArg<'tcx>> {
+        match self.kind() {
+            GenericArgKind::Ctor(ctor) => Some(ctor),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn expect_ctor(self) -> ty::CtorArg<'tcx> {
+        self.as_ctor().unwrap_or_else(|| bug!("expected a ctor, but found another kind"))
     }
 
     /// Unpack the `GenericArg` as a region when it is known certainly to be a region.
@@ -292,7 +321,7 @@ impl<'tcx> GenericArg<'tcx> {
 
     pub fn is_non_region_infer(self) -> bool {
         match self.kind() {
-            GenericArgKind::Lifetime(_) => false,
+            GenericArgKind::Lifetime(_) | GenericArgKind::Ctor(_) => false,
             // FIXME: This shouldn't return numerical/float.
             GenericArgKind::Type(ty) => ty.is_ty_or_numeric_infer(),
             GenericArgKind::Const(ct) => ct.is_ct_infer(),
@@ -322,6 +351,14 @@ impl<'a, 'tcx> Lift<TyCtxt<'tcx>> for GenericArg<'a> {
             GenericArgKind::Lifetime(lt) => tcx.lift(lt).map(|lt| lt.into()),
             GenericArgKind::Type(ty) => tcx.lift(ty).map(|ty| ty.into()),
             GenericArgKind::Const(ct) => tcx.lift(ct).map(|ct| ct.into()),
+            GenericArgKind::Ctor(ctor) => {
+                // Lift CtorDef by lifting its args.
+                let lifted_args = tcx.lift(ctor.0.0.args)?;
+                Some(tcx.mk_ctor_arg(ty::CtorDef {
+                    def_id: ctor.0.0.def_id,
+                    args: lifted_args,
+                }).into())
+            }
         }
     }
 }
@@ -335,6 +372,8 @@ impl<'tcx> TypeFoldable<TyCtxt<'tcx>> for GenericArg<'tcx> {
             GenericArgKind::Lifetime(lt) => lt.try_fold_with(folder).map(Into::into),
             GenericArgKind::Type(ty) => ty.try_fold_with(folder).map(Into::into),
             GenericArgKind::Const(ct) => ct.try_fold_with(folder).map(Into::into),
+            // CtorArg is a leaf — no type structure to fold inside it.
+            GenericArgKind::Ctor(_) => Ok(self),
         }
     }
 
@@ -343,6 +382,8 @@ impl<'tcx> TypeFoldable<TyCtxt<'tcx>> for GenericArg<'tcx> {
             GenericArgKind::Lifetime(lt) => lt.fold_with(folder).into(),
             GenericArgKind::Type(ty) => ty.fold_with(folder).into(),
             GenericArgKind::Const(ct) => ct.fold_with(folder).into(),
+            // CtorArg is a leaf — no type structure to fold inside it.
+            GenericArgKind::Ctor(_) => self,
         }
     }
 }
@@ -353,6 +394,8 @@ impl<'tcx> TypeVisitable<TyCtxt<'tcx>> for GenericArg<'tcx> {
             GenericArgKind::Lifetime(lt) => lt.visit_with(visitor),
             GenericArgKind::Type(ty) => ty.visit_with(visitor),
             GenericArgKind::Const(ct) => ct.visit_with(visitor),
+            // CtorArg is a leaf — nothing to visit.
+            GenericArgKind::Ctor(_) => V::Result::output(),
         }
     }
 }

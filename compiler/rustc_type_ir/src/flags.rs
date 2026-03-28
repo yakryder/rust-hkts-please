@@ -520,6 +520,9 @@ impl<I: Interner> FlagComputation<I> {
                 ty::GenericArgKind::Type(ty) => self.add_ty(ty),
                 ty::GenericArgKind::Lifetime(lt) => self.add_region(lt),
                 ty::GenericArgKind::Const(ct) => self.add_const(ct),
+                ty::GenericArgKind::Ctor(_) => {
+                    // CtorDef.args is empty in MVP; nothing to propagate.
+                }
             }
         }
     }

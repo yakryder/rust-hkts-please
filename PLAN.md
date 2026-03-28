@@ -259,34 +259,439 @@ All the original agent work from Step 7 is now committed (cb22b70d95e). The prin
 
 **Currently dead code:** `GenericArgs::identity_for_item` calls `mk_param_from_def` for every param during type collection — the `bug!()` there fires before our lowering runs. No test can exercise this path until Step 8 fixes `mk_param_from_def`.
 
-### Step 8: Substitution + `GenericArgKind::Ctor`
+### Step 8: Substitution + `GenericArgKind::Ctor` [IN PROGRESS]
 
-**The hard problem:** when `F` (a `TypeCtor` param) is substituted with `Option`, `Ctor(F, A)` must become `Option<A>`. Two coupled problems:
+**Session 2 progress:** Completed Phase A (rustc_type_ir) and Phase B (rustc_middle). Both build cleanly.
 
-1. `mk_param_from_def` needs to return a valid `GenericArg` for TypeCtor params (currently `bug!()`). This is the identity substitution — `F` maps to itself.
-2. The `TypeFoldable` impl for `Ctor` must do the application during substitution.
+**The hard problem:** when `F` (a `TypeCtor` param) is substituted with `Option`, `Ctor(F, A)` must become `Option<A>`. This requires a new `GenericArgKind::Ctor` variant — the representation of "a bare type constructor" as a generic argument — plus the fold logic that applies it.
 
-**Design decision (made this session):** `GenericArgKind::Ctor(DefId, &'tcx [GenericArg<'tcx>])` is correct — not a sentinel. Reasons:
-- Tag `0b11` is free in the existing 2-bit packing scheme; no representation change needed
-- Kind-correct: `Type(ty)` has kind `*`, `Ctor(...)` has kind `* -> *` — conflating them in one variant would be a lie
-- Exhaustive match breakage forces every site to handle the new case explicitly
-- ~400 match sites across 104 files (grep first, build second — Step 7 methodology)
+#### Phase A: rustc_type_ir ✅ DONE (Session 2)
 
-**Concrete shape:**
+Added `type CtorArg` and `fn apply_ctor` to `Interner` trait, added `Ctor(I::CtorArg)` variant to `GenericArgKind`, fixed all 13 match sites across 9 files in rustc_type_ir:
+- `interner.rs`: Added `type CtorArg` and `apply_ctor` method
+- `generic_arg.rs`: Added `Ctor` variant to `GenericArgKind`
+- `binder.rs`: Added `ctor_for_param` method that applies substitution via `interner.apply_ctor`
+- `flags.rs`, `walk.rs`, `canonical.rs`, `inherent.rs`, `elaborate.rs`, `outlives.rs`, `opaque_ty.rs`, `fast_reject.rs`: All match arms added with correct semantics
+
+Build: `./x build compiler/rustc_type_ir` passes cleanly (only pre-existing warnings).
+
+#### Phase B: rustc_middle ✅ DONE (Session 2)
+
+1. **New types:** `CtorDef<'tcx>` and `CtorArg<'tcx>` newtype wrapper in `sty.rs`
+2. **Encoding/decoding:** Manual `Encodable`, `Decodable`, `HashStable` impls for `CtorArg`
+3. **Interning:** Added `ctor_def` field to `CtxtInterners`, manual `mk_ctor_arg` method, `Borrow`/`PartialEq`/`Eq`/`Hash` impls
+4. **Pointer-tagged GenericArg:** Added `const CTOR_TAG: usize = 0b11`, updated `pack()` and `kind()` for tagging/untagging
+5. **From impl:** Added `From<CtorArg<'tcx>>` for `GenericArg<'tcx>`
+6. **Accessor methods:** Added `as_ctor()` and `expect_ctor()` on `GenericArg`
+7. **Type traversal:** Updated `Lift`, `TypeFoldable`, `TypeVisitable` impls
+8. **Interner implementation:** `apply_ctor` on `TyCtxt` creates `Ty::new_adt` with constructor + arg
+9. **mk_param_from_def:** Now creates identity `CtorArg` for `TypeCtor` params
+10. **All match sites:** Fixed in `generic_args.rs` (core impl), `print/pretty.rs`, `relate.rs`, `util.rs`, `structural_impls.rs`, `generics.rs`, `opaque_types.rs`, `context.rs`, `typeck_results.rs` — ~20 sites
+
+Build: `./x build compiler/rustc_middle` passes cleanly (38.8s).
+
+---
+
+#### 8.0 Design rationale: why `GenericArgKind::Ctor`, not `TyKind::CtorDef`
+
+The alternative considered and rejected: add `TyKind::CtorDef(DefId, GenericArgsRef)` and pack it into `GenericArgKind::Type`. This is a **sentinel** — a `* -> *` entity in a `*` slot. Every `expect_ty()` and `as_type()` call site silently receives a non-type. Substitution correctness requires runtime checks at every consumer. Inference variables for ctor params would have to live in the type unification table. The lie compounds as the feature evolves.
+
+`GenericArgKind::Ctor` is correct:
+- `Type(ty)` has kind `*`. `Ctor(...)` has kind `* -> *`. They are different things.
+- Tag `0b11` is free in the 2-bit pointer scheme; no representation change beyond adding the constant.
+- Exhaustive match breakage is a feature — it forces every consumer to explicitly reason about constructors.
+- Real blast radius (from grep analysis): **~80–120 match blocks across 64 files**, not 400. The majority have mechanical answers.
+
+**Why `TyKind::CtorDef` blast radius is not zero:** it adds a new `TyKind` variant, re-incurring all the match costs from Step 7 (`TyKind::Ctor`), plus creates silent failures at ~64 `GenericArgKind::Type` consumer sites. It trades explicit exhaustion for hidden bugs.
+
+---
+
+#### 8.1 Representation
+
+**New struct in `rustc_middle/src/ty/` (new file `ctor_def.rs` or added to `sty.rs`):**
+
 ```rust
-// New interned struct
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable, HashStable)]
 pub struct CtorDef<'tcx> {
     pub def_id: DefId,
-    pub args: &'tcx List<GenericArg<'tcx>>,  // captured args; empty for MVP unary-only
+    pub args: &'tcx List<GenericArg<'tcx>>,  // captured args; empty for MVP
 }
-
-const CTOR_TAG: usize = 0b11;
-GenericArgKind::Ctor(Interned<'tcx, CtorDef<'tcx>>)
 ```
 
-**Substitution fold:** `TyKind::Ctor(F_param, arg)` → look up `F_param` in args → get `GenericArgKind::Ctor(ctor_def)` → return `Ty::new_adt(tcx, ctor_def.def_id, ctor_def.args + [arg])`.
+Alignment: `DefId` is 8 bytes, pointer is 8 bytes → natural alignment 8 bytes ≥ 4. The pointer-tagging assertion `align_of_val(&*inner) & TAG_MASK == 0` passes.
 
-**Trip-wires that will fire:** `mk_param_from_def` (context.rs) and `var_for_def` (infer/mod.rs).
+**New newtype wrapper:**
+
+```rust
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable, HashStable)]
+pub struct CtorArg<'tcx>(pub Interned<'tcx, CtorDef<'tcx>>);
+```
+
+**New `GenericArgKind` variant (in `rustc_type_ir/src/generic_arg.rs`):**
+
+```rust
+pub enum GenericArgKind<I: Interner> {
+    Lifetime(I::Region),
+    Type(I::Ty),
+    Const(I::Const),
+    Ctor(I::CtorArg),   // kind * -> *; the concrete constructor being substituted for F<_>
+}
+```
+
+**New pointer tag (in `rustc_middle/src/ty/generic_args.rs`):**
+
+```rust
+const CTOR_TAG: usize = 0b11;  // was unreachable; now Ctor
+```
+
+---
+
+#### 8.2 `rustc_type_ir` changes (~13 match blocks across 9 files)
+
+All changes here are in the generic `I: Interner` layer. No `'tcx` or `DefId` appears here.
+
+##### `compiler/rustc_type_ir/src/interner.rs`
+
+Add to the `Interner` trait:
+
+```rust
+/// The type constructor argument kind — a concrete constructor (kind `* -> *`)
+/// that can be substituted for a `TypeCtor` parameter.
+type CtorArg: Copy + Debug + Hash + Eq;
+
+/// Apply a concrete constructor to a type argument, producing a type of kind `*`.
+/// E.g. `apply_ctor(Option_ctor, i32)` → `Option<i32>`.
+fn apply_ctor(self, ctor: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
+```
+
+Bounds on `CtorArg` do not need to include `TypeFoldable`/`TypeVisitable` explicitly — the enum's `derive(GenericTypeVisitable)` and the manual `TypeFoldable` impl on `GenericArg` handle traversal. The `Decodable_NoContext`/`Encodable_NoContext`/`HashStable_NoContext` derives on `GenericArgKind` impose implicit bounds; satisfied by `CtorArg<'tcx>`'s derives in `rustc_middle`.
+
+##### `compiler/rustc_type_ir/src/generic_arg.rs`
+
+Add `Ctor(I::CtorArg)` variant. The `derive_where(Clone, Copy, PartialEq, Debug; I: Interner)` expands automatically to include `I::CtorArg` in the where clause.
+
+##### `compiler/rustc_type_ir/src/binder.rs` — **critical: substitution logic**
+
+`ArgFolder::fold_ty` currently handles `Param` but not `Ctor`:
+
+```rust
+fn fold_ty(&mut self, t: I::Ty) -> I::Ty {
+    if !t.has_param() { return t; }
+    match t.kind() {
+        ty::Param(p) => self.ty_for_param(p, t),
+        _ => t.super_fold_with(self),   // Ctor falls here — folds inner ty but NOT the ctor param
+    }
+}
+```
+
+**Fix:** Add a `Ctor` arm before the wildcard:
+
+```rust
+ty::Ctor(ctor_param, arg_ty) => self.ctor_for_param(ctor_param, arg_ty),
+```
+
+Add the method:
+
+```rust
+fn ctor_for_param(&self, ctor_param: I::ParamCtor, arg_ty: I::Ty) -> I::Ty {
+    let opt_ctor = self.args.get(ctor_param.index() as usize).map(|a| a.kind());
+    let ctor = match opt_ctor {
+        Some(ty::GenericArgKind::Ctor(ctor)) => ctor,
+        Some(other) => panic!(
+            "expected ctor for `{ctor_param:?}` (index {}) but found {other:?}",
+            ctor_param.index()
+        ),
+        None => panic!(
+            "ctor param `{ctor_param:?}` (index {}) out of range, args={:?}",
+            ctor_param.index(), self.args
+        ),
+    };
+    let substituted_arg = arg_ty.fold_with(self);
+    self.interner.apply_ctor(ctor, substituted_arg)
+}
+```
+
+Also update `ty_for_param` and `const_for_param` — both match on `Some(GenericArgKind::Type(...))` and `Some(GenericArgKind::Const(...))` with a panic fallthrough. Add `Some(GenericArgKind::Ctor(_))` to those panics (already covered by the `Some(other) => self.type_param_expected(...)` arm if it's a wildcard — verify whether those are exhaustive or wildcard).
+
+##### `compiler/rustc_type_ir/src/flags.rs`
+
+`add_args` iterates generic args. Currently:
+
+```rust
+GenericArgKind::Type(ty) => self.add_ty(ty),
+GenericArgKind::Lifetime(lt) => self.add_region(lt),
+GenericArgKind::Const(ct) => self.add_const(ct),
+```
+
+Add:
+
+```rust
+GenericArgKind::Ctor(_) => {
+    // A CtorArg is a leaf (just a DefId + captured args).
+    // Captured args are empty in MVP, so no flags to propagate.
+    // If captured args are non-empty in future, fold them here.
+    self.add_flags(TypeFlags::HAS_TY_PARAM);  // conservative: treat as polymorphic
+}
+```
+
+Wait — actually a `CtorArg` in the args list means we're in a substituted context, not a param context. A `CtorArg` should not set `HAS_TY_PARAM`. Its flags should reflect the flags of its captured `args`. For MVP (empty `args`), add no flags. Revisit when partial application is added.
+
+Correct arm for MVP:
+
+```rust
+GenericArgKind::Ctor(_ctor) => {
+    // CtorDef.args is empty in MVP; nothing to propagate.
+}
+```
+
+##### `compiler/rustc_type_ir/src/walk.rs`
+
+`push_inner` dispatches on `GenericArgKind` to push child terms. A `Ctor` with captured args should push those args for traversal. MVP (empty args):
+
+```rust
+ty::GenericArgKind::Ctor(_) => {
+    // No captured args in MVP; nothing to push.
+}
+```
+
+##### `compiler/rustc_type_ir/src/outlives.rs`
+
+The match filters args for outlives analysis. A `Ctor` is not a lifetime and carries no outlives obligations in MVP:
+
+```rust
+ty::GenericArgKind::Ctor(_) => {
+    // Not a lifetime; no outlives constraint generated.
+}
+```
+
+##### `compiler/rustc_type_ir/src/elaborate.rs`
+
+Match at ~line 385. A `Ctor` arg has no elaboration obligations in MVP:
+
+```rust
+ty::GenericArgKind::Ctor(_) => {}
+```
+
+##### `compiler/rustc_type_ir/src/canonical.rs`
+
+Two match blocks (`is_identity`, `is_identity_modulo_regions`). A `Ctor` is an identity arg if it corresponds to the identity ctor for its param position. Conservative answer for now:
+
+```rust
+ty::GenericArgKind::Ctor(_) => false,  // not identity (safe conservative)
+```
+
+Revisit if canonical form queries break.
+
+##### `compiler/rustc_type_ir/src/opaque_ty.rs`
+
+Uses wildcard patterns — will NOT fail to compile. But audit:
+- `iter_captured_args` at ~line 26: `(GenericArgKind::Lifetime(_), Bivariant) => None` else panic. A `Ctor` would hit the panic. Add: `(GenericArgKind::Ctor(_), _) => None` (skip; no lifetime to capture).
+- `fold_captured_lifetime_args` at ~line 42: `_ => arg` wildcard. A `Ctor` falls through as-is. This is correct.
+
+##### `compiler/rustc_type_ir/src/fast_reject.rs`
+
+One match block comparing two `GenericArgKind` values. A `Ctor` vs `Ctor` should check structural equality. `Ctor` vs anything else → mismatch:
+
+```rust
+(ty::GenericArgKind::Ctor(c1), ty::GenericArgKind::Ctor(c2)) => c1 == c2,
+(ty::GenericArgKind::Ctor(_), _) | (_, ty::GenericArgKind::Ctor(_)) => false,
+```
+
+##### `compiler/rustc_type_ir/src/inherent.rs`
+
+`as_term()` and `is_non_region_infer()` are the two exhaustive 3-way matches. `as_type()`, `as_const()`, `as_region()` use `if let` — no change needed.
+
+```rust
+// as_term: Ctor is not a term (terms are types or consts)
+GenericArgKind::Ctor(_) => None,
+
+// is_non_region_infer: Ctor is not an inference variable
+GenericArgKind::Ctor(_) => false,
+```
+
+---
+
+#### 8.3 `rustc_middle` changes
+
+##### `compiler/rustc_middle/src/ty/` — new types
+
+Add `CtorDef<'tcx>` and `CtorArg<'tcx>` (see §8.1). Intern `CtorDef` via `TyCtxt`:
+
+```rust
+// In context.rs or intern.rs:
+pub fn mk_ctor_arg(self, def_id: DefId, args: GenericArgsRef<'tcx>) -> CtorArg<'tcx> {
+    CtorArg(self.intern_ctor_def(CtorDef { def_id, args }))
+}
+```
+
+This requires an intern table for `CtorDef` in `CtxtInterners` (parallel to how `RegionKind` is interned).
+
+##### `compiler/rustc_middle/src/ty/context/impl_interner.rs`
+
+Add to the `Interner` impl for `TyCtxt<'tcx>`:
+
+```rust
+type CtorArg = ty::CtorArg<'tcx>;
+
+fn apply_ctor(self, ctor: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
+    let ctor_def = ctor.0.0;  // &CtorDef<'tcx>
+    let all_args = self.mk_args_from_iter(
+        ctor_def.args.iter().chain(std::iter::once(arg.into()))
+    );
+    Ty::new_adt(self, self.adt_def(ctor_def.def_id), all_args)
+}
+```
+
+##### `compiler/rustc_middle/src/ty/generic_args.rs`
+
+1. Add `const CTOR_TAG: usize = 0b11;`
+2. Update `pack()`:
+   ```rust
+   GenericArgKind::Ctor(ctor) => {
+       assert_eq!(align_of_val(&*ctor.0.0) & TAG_MASK, 0);
+       (CTOR_TAG, NonNull::from(ctor.0.0).cast())
+   }
+   ```
+3. Update `kind()`, replacing `_ => intrinsics::unreachable()`:
+   ```rust
+   CTOR_TAG => GenericArgKind::Ctor(ty::CtorArg(Interned::new_unchecked(
+       ptr.cast::<CtorDef<'tcx>>().as_ref(),
+   ))),
+   _ => intrinsics::unreachable(),
+   ```
+4. Update `PhantomData` marker at `GenericArg` struct definition to include `CtorArg<'tcx>`.
+5. Add `From<ty::CtorArg<'tcx>>` for `GenericArg<'tcx>`.
+6. Update `Lift`, `TypeFoldable`, `TypeVisitable`, `Encodable`, `Decodable` impls (add `Ctor` arms).
+7. Update `DynSend`/`DynSync`/`Send`/`Sync` where clauses to include `CtorArg`.
+8. Add `as_ctor()` and `expect_ctor()` accessors.
+9. Update `as_term()` (`Ctor` → `None`), `is_non_region_infer()` (`Ctor` → `false`).
+10. Update `non_erasable_generics()` to yield `Ctor` args.
+
+##### `compiler/rustc_middle/src/ty/context.rs`
+
+Fix `mk_param_from_def`:
+
+```rust
+GenericParamDefKind::TypeCtor => {
+    // Identity arg: F maps to the CtorDef for F's own DefId,
+    // with no captured args (it's a param, not a partial application).
+    tcx.mk_ctor_arg(param.def_id, tcx.mk_args(&[])).into()
+}
+```
+
+##### `compiler/rustc_middle/src/ty/structural_impls.rs`
+
+`TypeSuperFoldable` for `Ctor` currently folds the inner `ty` but leaves `ctor` as a leaf — that is correct. The actual ctor substitution happens in `ArgFolder::fold_ty`. No change needed here.
+
+Add `Ctor` arms to `Debug` impl, `Lift` impl if present.
+
+##### `compiler/rustc_middle/src/ty/print/pretty.rs`
+
+The existing `pretty_print_type` arm for `Ctor` (from Step 2) prints `F<A>`. With a concrete `CtorArg`, printing a `GenericArgKind::Ctor` should show the ctor's path. Look up `def_id` via `tcx.def_path_str`:
+
+```rust
+// In pretty_print_generic_arg or similar:
+GenericArgKind::Ctor(ctor) => {
+    p!(print_def_path(ctor.0.0.def_id, &[]));
+}
+```
+
+##### All other `rustc_middle` match sites (~20–30 blocks)
+
+Sites: `structural_impls.rs`, `opaque_types.rs`, `util.rs`, `typeck_results.rs`, `relate.rs`, `print/mod.rs`.
+
+**Canonical arm answers by site:**
+
+| Site | `Ctor` arm |
+|------|-----------|
+| `structural_impls.rs` Debug fmt | delegate to `CtorArg`'s `Debug` |
+| `opaque_types.rs` identity-check `is_identity` | `false` (conservative) |
+| `opaque_types.rs` region collection | skip (no lifetime) |
+| `util.rs` `is_ty_param` / similar | `false` |
+| `util.rs` `same_type_modulo_infer` | structural check |
+| `typeck_results.rs` `adjust_fulfillment_errors` | skip |
+| `relate.rs` type relation | `Ctor` on LHS/RHS → mismatch unless both are `Ctor` with same def (future work) |
+| `print/mod.rs` `characteristic_def_id` | `None` |
+
+---
+
+#### Phase C: rustc_infer [PENDING Session 3]
+
+##### `compiler/rustc_infer/src/infer/mod.rs` — `var_for_def`
+
+Currently the `TypeCtor` arm hits `bug!()`. For now, defer inference on ctor params — constructors are not yet inferred, only explicit:
+
+```rust
+GenericParamDefKind::TypeCtor => {
+    // No inference variable for constructor params yet.
+    // Ctor params must be explicitly supplied at call sites.
+    bug!("var_for_def: TypeCtor inference not yet supported")
+}
+```
+
+Leave as `bug!()` with a clearer message. This trip-wire is expected to fire if someone writes `fmap(Some(1), |x| x)` with an inferred `F`. That's post-MVP.
+
+##### Other `rustc_infer` match sites
+
+`at.rs`, `context.rs`, `canonical/query_response.rs`, `outlives/obligations.rs` — all have `GenericArgKind` matches. Arm decisions:
+- Query response canonicalization: `Ctor` → `bug!("ctor in canonical query response — not yet supported")` (defensively; should not appear until inference is wired)
+- Outlives obligations: `Ctor` → skip (no outlives obligation for a ctor)
+
+---
+
+#### Phase D: Rest of compiler (~40–60 match blocks) [PENDING Session 3]
+
+Files in: `rustc_hir_analysis`, `rustc_hir_typeck`, `rustc_trait_selection`, `rustc_next_trait_solver`, `rustc_borrowck`, `rustc_codegen_ssa`, `rustc_lint`, `rustc_mir_build`, `rustc_const_eval`, `rustc_public`, `rustc_sanitizers`, `rustc_symbol_mangling`, `rustc_ty_utils`.
+
+**Canonical arm patterns:**
+
+| Pattern | `Ctor` arm | Rationale |
+|---------|-----------|-----------|
+| Outlives / variance analysis | `Ctor(_) => {}` skip | No lifetime contained |
+| WF check | `Ctor(_) => {}` | No bounds to check in MVP |
+| `compare_impl_item` | `Ctor(_) => {}` | No impl item can be a ctor in MVP |
+| Codegen / layout | `Ctor(_) => bug!(...)` | Constructors never reach codegen unapplied |
+| Symbol mangling | `Ctor(ctor) => { ... mangle def_id ... }` | Need to mangle the ctor's def_id |
+| Sanitizers | `Ctor(_) => {}` | No sanitizer annotation on a ctor |
+| `rustc_public` | `Ctor(_) => todo!("public API for ctor args")` | Deferred; public API not in scope |
+| Trait selection | `Ctor(_) => bug!(...)` | No trait impl for bare constructors in MVP |
+| Borrowck | `Ctor(_) => {}` | No borrow to track in a ctor arg |
+
+**Methodology:** grep first, categorize by the table above, then build. Do not discover match sites incrementally through compilation errors.
+
+```bash
+grep -rl "GenericArgKind::Lifetime\|GenericArgKind::Type\|GenericArgKind::Const" \
+  compiler/ --include="*.rs" | grep -v "/build/"
+```
+
+That gives the 64-file list. Work through them in dependency order:
+`rustc_type_ir` → `rustc_middle` → `rustc_infer` → `rustc_hir_analysis` → `rustc_hir_typeck` → `rustc_trait_selection` → rest.
+
+---
+
+#### 8.6 Interning infrastructure
+
+`CtorDef<'tcx>` must be intern-able in `TyCtxt`. This parallels `RegionKind` interning:
+
+1. Add `ctor_defs: InternedSet<'tcx, CtorDef<'tcx>>` to `CtxtInterners` in `context.rs`.
+2. Add `intern_ctor_def` method to `TyCtxt`.
+3. Implement `Borrow<CtorDef<'tcx>>` for `CtorDef<'tcx>` (trivial).
+4. Implement `HashStable`, `TyEncodable`, `TyDecodable` for `CtorDef<'tcx>` (via derives).
+
+---
+
+#### 8.7 Build sequence and verification
+
+Work in phases, building after each:
+
+1. `./x build compiler/rustc_type_ir` — after Phase A (8.2)
+2. `./x build compiler/rustc_middle` — after Phase B (8.3 + 8.6)
+3. `./x build compiler/rustc_infer` — after Phase C (8.4)
+4. `./x build compiler` — after Phase D (8.5); expect compile errors; fix exhaustively
+5. `./x test tests/ui/type-constructors/bugs/ice-fn-type-collection.rs` — should no longer ICE
+6. `./x test tests/ui/type-constructors/` — full suite
+
+**Success criterion for Step 8:** The ICE test `ice-fn-type-collection.rs` either passes (no panic) or emits a structured error. The basic parse tests continue to pass.
 
 ---
 

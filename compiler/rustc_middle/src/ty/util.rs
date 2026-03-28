@@ -546,6 +546,8 @@ impl<'tcx> TyCtxt<'tcx> {
                         // Error: not a const param
                         _ => false,
                     },
+                    // Ctor args don't participate in drop constraints
+                    GenericArgKind::Ctor(_) => false,
                 }
             })
             .map(|(item_param, _)| item_param)
@@ -596,6 +598,8 @@ impl<'tcx> TyCtxt<'tcx> {
                     }
                     _ => return Err(NotUniqueParam::NotParam(c.into())),
                 },
+                // Ctor identity args: CtorDef whose def_id is the param's own def_id
+                GenericArgKind::Ctor(_) => {}
             }
         }
 

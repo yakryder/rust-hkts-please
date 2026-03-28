@@ -241,6 +241,7 @@ impl<I: Interner> CanonicalVarValues<I> {
             ty::GenericArgKind::Const(ct) => {
                 matches!(ct.kind(), ty::ConstKind::Bound(ty::BoundVarIndexKind::Canonical, bc) if bc.var().as_usize() == bv)
             }
+            ty::GenericArgKind::Ctor(_) => false,
         })
     }
 
@@ -272,6 +273,7 @@ impl<I: Interner> CanonicalVarValues<I> {
                         return false;
                     }
                 }
+                ty::GenericArgKind::Ctor(_) => return false,
             }
         }
 

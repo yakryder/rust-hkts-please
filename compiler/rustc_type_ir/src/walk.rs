@@ -154,6 +154,9 @@ fn push_inner<I: Interner>(stack: &mut TypeWalkerStack<I>, parent: I::GenericArg
             }
         },
         ty::GenericArgKind::Lifetime(_) => {}
+        ty::GenericArgKind::Ctor(_) => {
+            // No captured args in MVP; nothing to push.
+        }
         ty::GenericArgKind::Const(parent_ct) => match parent_ct.kind() {
             ty::ConstKind::Infer(_)
             | ty::ConstKind::Param(_)

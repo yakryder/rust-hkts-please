@@ -419,6 +419,8 @@ pub fn elaborate_outlives_assumptions<I: Interner>(
             ty::GenericArgKind::Lifetime(_) => {}
             // Consts don't really participate in outlives.
             ty::GenericArgKind::Const(_) => {}
+            // A ctor arg has no elaboration obligations in MVP.
+            ty::GenericArgKind::Ctor(_) => {}
         }
     }
 
