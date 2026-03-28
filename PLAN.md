@@ -780,3 +780,33 @@ Completed systematic fix of GenericArgKind::Ctor and TyKind::Ctor match sites ac
 4. Document any remaining issues or edge cases discovered
 
 **Branch state:** `add-hkts` — ready to continue from current commit
+
+---
+
+## Session 4 Progress (2026-03-28)
+
+**All remaining compilation errors fixed: ✅ COMPLETE**
+
+Fixed the final ~5% of compilation issues blocking the build:
+
+**Errors fixed:**
+1. **rustc_builtin_macros** (5 sites): `span_bug!` macro calls → replaced with `cx.dcx().span_bug()` call
+   - `deriving/generic/mod.rs` (2 sites): TypeCtor arms in param filtering and self_params construction
+   - `deriving/generic/ty.rs` (1 site): TypeCtor in generic arg construction
+   - `deriving/coerce_pointee.rs` (3 sites): TypeCtor in args conversion and impl generics rewriting
+
+2. **rustc_mir_transform** (1 site): Added `TyKind::Ctor` to unsupported types in `dataflow_const_prop.rs:867`
+
+3. **rustdoc** (6 sites, 4 files):
+   - `clean/mod.rs`: Added `GenericParamDefKind::TypeCtor => false` (filter from docs), `GenericParamKind::TypeCtor => {}` (skip), `clean_generic_param_def` panic, `clean_generic_param` panic, `TyKind::Ctor` panic
+   - `clean/utils.rs`: `GenericArgKind::Ctor(_) => None` (filter from cleaned args)
+   - `passes/collect_intra_doc_links.rs`: `ty::Ctor(..) => return None` (not resolvable)
+
+4. **rustc_next_trait_solver** (1 site): Unused variable warning → prefixed `ctor` with underscore
+
+**Build status:** `./x build` passes cleanly. All compiler artifacts compile without errors or warnings.
+
+**Next steps:**
+1. Run `./x test tests/ui/type-constructors/` to verify end-to-end parsing and type-checking
+2. Debug any test failures
+3. Document final state and remaining scope items (if any)
