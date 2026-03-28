@@ -735,3 +735,48 @@ You are a type theorist and compiler engineer working on a Rust compiler fork. Y
 - `./x build compiler/rustc_middle` — middle layer
 - `./x build compiler` — full compiler (slow, do at milestones)
 - `./x test tests/ui/type-constructors/` — end-to-end verification
+
+---
+
+## Session 3 Progress (2026-03-28)
+
+**Phase C (rustc_infer): ✅ COMPLETE**
+- Fixed 5 non-exhaustive match errors across infer module (mod.rs, context.rs, outlives/obligations.rs, canonical/query_response.rs)
+- All conservatively handled: Ctor args are concrete (no inference), no outlives constraints, no stalled vars, etc.
+- `./x build compiler/rustc_infer` passes cleanly
+
+**Phase D (Rest of compiler): ~95% COMPLETE**
+Completed systematic fix of GenericArgKind::Ctor and TyKind::Ctor match sites across ~40+ files:
+
+**Completed:**
+- rustc_symbol_mangling (2 files): v0.rs uses `print_def_path` for ctor mangling
+- rustc_next_trait_solver (3 files): canonical query handling, opaque type normalization, eval context
+- rustc_sanitizers, rustc_ty_utils, rustc_const_eval, rustc_lint, rustc_borrowck (7 files): outlives/variance/CFI constraints
+- rustc_hir_analysis (4 files): check/mod.rs, outlives utilities, variance constraints
+- rustc_codegen_llvm, rustc_codegen_ssa, rustc_passes: debuginfo type names, export checking
+- rustc_trait_selection (6 files): error reporting, opaque types, trait selection
+- rustc_hir_typeck: method suggestion
+- rustc_public: GenericParamDefKind::TypeCtor variant added to public API
+- rustc_resolve (5 errors in late.rs, def_collector.rs, lib.rs): treated TypeCtor like Type params for name resolution
+- TyKind::Ctor added to error arms in codegen_ssa and rustc_passes
+
+**Remaining:**
+- rustc_builtin_macros: 5 `span_bug!` errors (likely from our code, need to check scopes/imports)
+- Likely minor scope/import issues that prevented compilation despite logic fixes
+- No more non-exhaustive pattern matches after last round of fixes
+
+**Key insights from this session:**
+1. The proactive grep-first approach was essential — we identified 64 files upfront containing GenericArgKind refs
+2. Most matches follow predictable patterns:
+   - Outlives/lifetime constraints: skip Ctor (no lifetime info)
+   - Inference/resolution: Ctor is concrete, return as-is
+   - Variance/CFI/codegen: Ctor shouldn't reach here, use bug!()/unreachable!()
+3. Error arm consolidation worked well (`| GenericArgKind::Ctor(_)` in patterns)
+
+**Next session TODO:**
+1. Debug rustc_builtin_macros span_bug errors (likely missing use statement or macro scope)
+2. Run `./x build compiler` to verify full build
+3. Run `./x test tests/ui/type-constructors/` to verify end-to-end parsing and type-checking
+4. Document any remaining issues or edge cases discovered
+
+**Branch state:** `add-hkts` — ready to continue from current commit
