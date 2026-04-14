@@ -474,7 +474,9 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
         let has_non_lt_args = data.args.iter().any(|arg| match arg {
             AngleBracketedArg::Arg(ast::GenericArg::Lifetime(_))
             | AngleBracketedArg::Constraint(_) => false,
-            AngleBracketedArg::Arg(ast::GenericArg::Type(_) | ast::GenericArg::Const(_)) => true,
+            AngleBracketedArg::Arg(
+                ast::GenericArg::Type(_) | ast::GenericArg::Const(_) | ast::GenericArg::Underscore(_),
+            ) => true,
         });
         let args = data
             .args

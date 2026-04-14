@@ -284,6 +284,8 @@ pub enum GenericArg {
     Type(Box<Ty>),
     /// `1` in `Foo<1>`.
     Const(AnonConst),
+    /// `_` in `Foo<_>` — underscore type constructor argument.
+    Underscore(Span),
 }
 
 impl GenericArg {
@@ -292,6 +294,7 @@ impl GenericArg {
             GenericArg::Lifetime(lt) => lt.ident.span,
             GenericArg::Type(ty) => ty.span,
             GenericArg::Const(ct) => ct.value.span,
+            GenericArg::Underscore(span) => *span,
         }
     }
 }

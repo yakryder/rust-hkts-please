@@ -1290,6 +1290,9 @@ impl<'ast, 'ra, 'tcx> Visitor<'ast> for LateResolutionVisitor<'_, 'ast, 'ra, 'tc
             GenericArg::Const(ct) => {
                 self.resolve_anon_const(ct, AnonConstKind::ConstArg(IsRepeatExpr::No))
             }
+            GenericArg::Underscore(_) => {
+                // Underscore constructor arguments don't require resolution
+            }
         }
         self.diag_metadata.currently_processing_generic_args = prev;
     }

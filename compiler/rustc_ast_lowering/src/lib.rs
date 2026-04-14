@@ -1404,6 +1404,15 @@ impl<'hir, R: ResolverAstLoweringExt<'hir>> LoweringContext<'_, 'hir, R> {
                     None => GenericArg::Infer(hir::InferArg { hir_id: ct.hir_id, span: ct.span }),
                 }
             }
+            ast::GenericArg::Underscore(span) => {
+                // Underscore constructors in argument position are not yet supported.
+                // For now, treat as an inference placeholder.
+                // TODO: Implement proper type constructor lowering.
+                GenericArg::Infer(hir::InferArg {
+                    hir_id: self.next_id(),
+                    span: self.lower_span(*span),
+                })
+            }
         }
     }
 

@@ -811,6 +811,11 @@ impl<'a> Parser<'a> {
                 });
                 self.mk_ty(lt.ident.span, ast::TyKind::Err(guar)).into()
             }
+            Some(GenericArg::Underscore(span)) => {
+                let err = self.dcx().struct_span_err(span, "underscore not allowed in equality constraint");
+                let guar = err.emit();
+                self.mk_ty(span, ast::TyKind::Err(guar)).into()
+            }
             None => {
                 let after_eq = eq_span.shrink_to_hi();
                 let before_next = self.token.span.shrink_to_lo();
@@ -934,6 +939,11 @@ impl<'a> Parser<'a> {
         let arg = if self.check_lifetime() && self.look_ahead(1, |t| !t.is_like_plus()) {
             // Parse lifetime argument.
             GenericArg::Lifetime(self.expect_lifetime())
+        } else if self.token.is_keyword(kw::Underscore) {
+            // Parse underscore constructor argument: `_` in `Foo<_>`.
+            let span = self.token.span;
+            self.bump();
+            GenericArg::Underscore(span)
         } else if self.check_const_arg() {
             // Parse const argument.
             GenericArg::Const(self.parse_const_arg()?)
@@ -1023,6 +1033,7 @@ impl<'a> Parser<'a> {
                     })
                 }
                 GenericArg::Lifetime(lt) => GenericArg::Lifetime(lt),
+                GenericArg::Underscore(span) => GenericArg::Underscore(span),
             }));
         }
 
