@@ -927,3 +927,38 @@ Implemented the identity detection fix in `ctor_for_param`:
 **Foundation is now sound:** All identity/concrete constructor flows are type-safe. The next phases (parser, trait solver) can proceed with confidence.
 
 **Branch state:** `add-hkts` — ICE fix complete, ready for parser debugging
+
+## Session 7 Progress (2026-04-14)
+
+**Parser Support for Underscore-Ctor Syntax — Complete**
+
+Implemented AST and parser layer changes to recognize `_` as a valid generic argument (e.g., `F<_>`).
+
+**Changes:**
+1. `ast::GenericArg`: Added `Underscore(Span)` variant
+2. `parse_generic_arg` in `rustc_parse/src/parser/path.rs`: Recognize `_` keyword and construct `GenericArg::Underscore`
+3. Updated all pattern matches on `GenericArg`:
+   - `rustc_ast_pretty`: Print as `_`
+   - `rustc_ast_lowering`: Lower to `GenericArg::Infer` (temporary)
+   - `rustc_resolve/late`: Handle in visitor (no-op for now)
+   - `rustc_parse/path.rs`: Error on `_` in equality constraints
+
+**Test Status:**
+- Parse tests: ✅ All 4 passing (basic-fn-param, basic-struct-param, mixed-params, multiple-ctor-params)
+- Type checking tests: ❌ 5 failing (gate tests + ICE tests) — expected, not yet implemented
+
+**Current Blocking Issues:**
+1. **HIR lowering**: `GenericArg::Underscore` → `hir::GenericArg::Infer` (provisional)
+   - Need proper `hir::GenericArg::UnderscoreCtor` or equivalent when ready
+2. **Type IR**: Not yet converting to `GenericArgKind::Ctor` with identity marker
+3. **Type checking**: Constructor application and Sized trait handling
+4. **Feature gating**: `type_constructors` gate not yet enforced
+
+**Next Session Tasks (Priority Order):**
+1. Add `hir::GenericArg` variant for underscore constructors (or reuse Infer pattern)
+2. Implement HIR lowering to properly convert `Underscore` → type IR `GenericArgKind::Ctor(identity)`
+3. Update type collection/lowering to handle constructor types correctly
+4. Add feature gate checks to reject ungated usage
+5. Fix Sized trait bounds for constructor types
+
+**Branch state:** `add-hkts` — parser complete, ready for HIR/type lowering
