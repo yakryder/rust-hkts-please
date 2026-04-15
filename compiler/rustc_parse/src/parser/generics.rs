@@ -40,15 +40,18 @@ impl<'a> Parser<'a> {
     /// Matches `typaram = IDENT (`?` unbound)? optbounds ( EQ ty )?`.
     fn parse_ty_param(&mut self, preceding_attrs: AttrVec) -> PResult<'a, GenericParam> {
         // Detect `F<_>` — a type constructor parameter of kind `* -> *`.
+        // Note: `>>` is tokenized as `Shr`, so we need to check for both `Gt` and `Shr`.
         if self.token.is_ident()
             && self.look_ahead(1, |t| t.kind == token::Lt)
-            && self.look_ahead(2, |t| t.is_keyword(kw::Underscore))
-            && self.look_ahead(3, |t| t.kind == token::Gt)
+            && self.look_ahead(2, |t| {
+                t.ident().map_or(false, |(ident, _)| ident.name == kw::Underscore)
+            })
+            && self.look_ahead(3, |t| t.kind == token::Gt || t.kind == token::Shr)
         {
             let ident = self.parse_ident()?;
-            self.bump(); // <
-            self.bump(); // _
-            self.bump(); // >
+            self.eat_lt();  // consume <
+            self.bump();    // consume _
+            self.expect_gt()?;  // consume > (handles >> properly by splitting)
             return Ok(GenericParam {
                 ident,
                 id: ast::DUMMY_NODE_ID,

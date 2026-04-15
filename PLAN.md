@@ -201,34 +201,42 @@ All four crates pass: `rustc_hir_pretty`, `rustc_ast`, `rustc_ast_lowering`, `ru
 
 File: `compiler/rustc_parse/src/parser/generics.rs`
 
-In `parse_ty_param()`, add lookahead **before** the existing type param parsing:
-- If current token is `IDENT` and next tokens are `<` `_` `>`, consume all four tokens and return a `GenericParam { kind: TypeCtor, ... }`
-- The `_` inside `<>` is the arity marker — hard error if anything else appears (e.g. `F<T>` in generic position is not a ctor declaration)
-- Otherwise fall through to normal type param parsing
+In `parse_ty_param()`, add lookahead **before** the existing type param parsing to recognize `F<_>` syntax.
 
-Implementation sketch:
+**Implementation details (Session 8):**
+- Lookahead checks for: IDENT, `<`, `_` (as identifier name), and `>` (or `Shr` token for `>>`)
+- **Critical fix:** `>>` is tokenized as single `Shr` token, so lookahead(3) must check for both `Gt` and `Shr`
+- **Token consumption:** Use `eat_lt()` and `expect_gt()` instead of manual `bump()` to properly split `>>` tokens via `break_and_eat` mechanism
+- Returns `GenericParam { kind: TypeCtor, ... }` immediately
+
+Actual implementation:
 ```rust
-// in parse_ty_param, before existing logic:
 if self.token.is_ident()
     && self.look_ahead(1, |t| t.kind == token::Lt)
-    && self.look_ahead(2, |t| t.kind == token::Underscore)
-    && self.look_ahead(3, |t| t.kind == token::Gt)
+    && self.look_ahead(2, |t| {
+        t.ident().map_or(false, |(ident, _)| ident.name == kw::Underscore)
+    })
+    && self.look_ahead(3, |t| t.kind == token::Gt || t.kind == token::Shr)
 {
     let ident = self.parse_ident()?;
-    self.bump(); // <
-    self.bump(); // _
-    self.bump(); // >
+    self.eat_lt();  // consume <
+    self.bump();    // consume _
+    self.expect_gt()?;  // consume > (handles >> properly by splitting)
     return Ok(GenericParam {
         ident,
         id: ast::DUMMY_NODE_ID,
-        attrs: ast::AttrVec::new(),
-        bounds: vec![],
-        kind: ast::GenericParamKind::TypeCtor,
+        attrs: preceding_attrs,
+        bounds: Vec::new(),
+        kind: GenericParamKind::TypeCtor,
         is_placeholder: false,
         colon_span: None,
     });
 }
 ```
+
+**Why the fixes were needed:**
+1. `>>` tokenization: Lookahead(3) returns `Shr` token, not `Gt`. Must check for both.
+2. Manual `bump()` doesn't split `>>`: Would consume entire token, breaking parser state. Use `expect_gt()` which calls `break_and_eat()` internally to properly split and consume only the first `>`.
 
 ### Step 7: HIR Lowering — propagate `TypeCtor` through compiler ✅ DONE
 
@@ -962,3 +970,40 @@ Implemented AST and parser layer changes to recognize `_` as a valid generic arg
 5. Fix Sized trait bounds for constructor types
 
 **Branch state:** `add-hkts` — parser complete, ready for HIR/type lowering
+
+## Session 8 Progress (2026-04-14)
+
+**Parser Blocker Fixed — F<_> Syntax Now Recognized**
+
+Root cause identified and fixed: `>>` is tokenized as a single `Shr` token, not two `Gt` tokens. When parsing `F<_>>` in generic parameters, the parser was incorrectly consuming the entire `>>` with manual `bump()`, leaving it out of sync.
+
+**Changes:**
+1. `compiler/rustc_parse/src/parser/generics.rs` - `parse_ty_param()`:
+   - Added check for `token::Shr` in lookahead(3) (in addition to `token::Gt`)
+   - Replaced manual `bump()` calls with parser methods:
+     - `self.eat_lt()` for consuming `<`
+     - `self.expect_gt()?` for consuming `>` (properly handles `>>` splitting via `break_and_eat`)
+
+**How the fix works:**
+- `expect_gt()` uses `break_and_eat()` internally
+- `break_and_eat()` calls `break_two_token_op()` to split `Shr` into two `Gt` tokens
+- Only the first `>` is consumed, leaving the second `>` for the outer generic bracket
+
+**Test Results:**
+- Parser tests: ✅ Now recognize `F<_>` syntax correctly
+- Tests compile past parser stage (4 passing, 5 failing on type-checking - expected)
+- No more "expected one of `,`, `:`, `=`, or `>`" parser errors
+
+**Remaining Work (Not Blocking):**
+1. Type-checking: Constructor application and Sized trait handling  
+2. Feature gating: `type_constructors` feature gate enforcement
+3. HIR lowering: Proper handling of underscore constructors
+4. Trait solver: Sizedness and bound satisfaction for constructor types
+
+**Next Session Tasks (Priority Order):**
+1. Update test expectations now that parser works
+2. Implement proper HIR/type lowering for underscore constructors
+3. Add feature gate checks
+4. Fix remaining type-checking failures
+
+**Branch state:** `add-hkts` — parser blocker resolved, ready for type system work
