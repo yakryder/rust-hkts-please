@@ -171,3 +171,94 @@ impl<'tcx> UnifyValue for ConstVariableValue<'tcx> {
         }
     }
 }
+
+// Type constructors.
+
+#[derive(Copy, Clone, Debug)]
+#[allow(dead_code)]
+pub(crate) struct CtorVariableOrigin {
+    pub span: Span,
+    /// `DefId` of the type constructor parameter this was instantiated for, if any.
+    ///
+    /// This should only be used for diagnostics.
+    pub param_def_id: Option<DefId>,
+}
+
+#[derive(Copy, Clone, Debug)]
+#[allow(dead_code)]
+pub(crate) enum CtorVariableValue<'tcx> {
+    Known { value: ty::CtorDef<'tcx> },
+    Unknown { origin: CtorVariableOrigin, universe: ty::UniverseIndex },
+}
+
+impl<'tcx> CtorVariableValue<'tcx> {
+    /// If this value is known, returns the constructor it is known to be.
+    /// Otherwise, `None`.
+    #[allow(dead_code)]
+    pub(crate) fn known(&self) -> Option<ty::CtorDef<'tcx>> {
+        match *self {
+            CtorVariableValue::Unknown { .. } => None,
+            CtorVariableValue::Known { value } => Some(value),
+        }
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub(crate) struct CtorVidKey<'tcx> {
+    pub vid: ty::CtorVid,
+    pub phantom: PhantomData<ty::CtorDef<'tcx>>,
+}
+
+impl<'tcx> From<ty::CtorVid> for CtorVidKey<'tcx> {
+    fn from(vid: ty::CtorVid) -> Self {
+        CtorVidKey { vid, phantom: PhantomData }
+    }
+}
+
+impl<'tcx> UnifyKey for CtorVidKey<'tcx> {
+    type Value = CtorVariableValue<'tcx>;
+    #[inline]
+    fn index(&self) -> u32 {
+        self.vid.as_u32()
+    }
+    #[inline]
+    fn from_index(i: u32) -> Self {
+        CtorVidKey::from(ty::CtorVid::from_u32(i))
+    }
+    fn tag() -> &'static str {
+        "CtorVidKey"
+    }
+    fn order_roots(a: Self, _: &Self::Value, b: Self, _: &Self::Value) -> Option<(Self, Self)> {
+        if a.vid.as_u32() < b.vid.as_u32() { Some((a, b)) } else { Some((b, a)) }
+    }
+}
+
+impl<'tcx> UnifyValue for CtorVariableValue<'tcx> {
+    type Error = NoError;
+
+    fn unify_values(&value1: &Self, &value2: &Self) -> Result<Self, Self::Error> {
+        match (value1, value2) {
+            (CtorVariableValue::Known { .. }, CtorVariableValue::Known { .. }) => {
+                bug!("equating two constructor variables, both of which have known values")
+            }
+
+            // If one side is known, prefer that one.
+            (CtorVariableValue::Known { .. }, CtorVariableValue::Unknown { .. }) => Ok(value1),
+            (CtorVariableValue::Unknown { .. }, CtorVariableValue::Known { .. }) => Ok(value2),
+
+            // If both sides are *unknown*, it hardly matters, does it?
+            (
+                CtorVariableValue::Unknown { origin, universe: universe1 },
+                CtorVariableValue::Unknown { origin: _, universe: universe2 },
+            ) => {
+                // If we unify two unbound variables, ?F and ?G, then whatever
+                // value they wind up taking (which must be the same value) must
+                // be nameable by both universes. Therefore, the resulting
+                // universe is the minimum of the two universes, because that is
+                // the one which contains the fewest names in scope.
+                let universe = cmp::min(universe1, universe2);
+                Ok(CtorVariableValue::Unknown { origin, universe })
+            }
+        }
+    }
+}

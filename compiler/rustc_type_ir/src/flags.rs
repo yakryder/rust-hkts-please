@@ -33,7 +33,8 @@ bitflags::bitflags! {
         /// inference is required.
         const HAS_INFER                   = TypeFlags::HAS_TY_INFER.bits()
                                           | TypeFlags::HAS_RE_INFER.bits()
-                                          | TypeFlags::HAS_CT_INFER.bits();
+                                          | TypeFlags::HAS_CT_INFER.bits()
+                                          | TypeFlags::HAS_CTOR_INFER.bits();
 
         /// Does this have `Placeholder`?
         const HAS_TY_PLACEHOLDER          = 1 << 6;
@@ -57,6 +58,7 @@ bitflags::bitflags! {
                                           | TypeFlags::HAS_CT_PARAM.bits()
                                           | TypeFlags::HAS_TY_INFER.bits()
                                           | TypeFlags::HAS_CT_INFER.bits()
+                                          | TypeFlags::HAS_CTOR_INFER.bits()
                                           | TypeFlags::HAS_TY_PLACEHOLDER.bits()
                                           | TypeFlags::HAS_CT_PLACEHOLDER.bits()
                                           // We consider 'freshened' types and constants
@@ -136,6 +138,9 @@ bitflags::bitflags! {
 
         /// Does this have have a `Bound(BoundVarIndexKind::Canonical, _)`?
         const HAS_CANONICAL_BOUND         = 1 << 25;
+
+        /// Does this have type constructor inference variables?
+        const HAS_CTOR_INFER              = 1 << 26;
     }
 }
 

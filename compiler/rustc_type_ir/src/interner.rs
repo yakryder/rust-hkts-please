@@ -138,6 +138,9 @@ pub trait Interner:
     /// reconstructed as `Ctor(param, arg)`.
     fn ctor_is_identity(self, ctor: Self::CtorArg) -> bool;
 
+    /// If a ctor is an inference variable, return its vid. Otherwise return None.
+    fn ctor_as_infer_var(self, ctor: Self::CtorArg) -> Option<ty::CtorVid>;
+
     /// Construct a `Ctor(param, arg)` type.
     fn mk_ty_ctor(self, param: Self::ParamCtor, arg: Self::Ty) -> Self::Ty;
     type Symbol: Symbol<Self>;

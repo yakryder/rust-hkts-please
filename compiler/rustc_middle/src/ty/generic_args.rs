@@ -249,7 +249,7 @@ impl<'tcx> GenericArg<'tcx> {
                     ptr.cast::<WithCachedTypeInfo<ty::ConstKind<'tcx>>>().as_ref(),
                 ))),
                 CTOR_TAG => GenericArgKind::Ctor(ty::CtorArg(Interned::new_unchecked(
-                    ptr.cast::<ty::CtorDef<'tcx>>().as_ref(),
+                    ptr.cast::<ty::CtorArgKind<'tcx>>().as_ref(),
                 ))),
                 _ => intrinsics::unreachable(),
             }
@@ -352,12 +352,21 @@ impl<'a, 'tcx> Lift<TyCtxt<'tcx>> for GenericArg<'a> {
             GenericArgKind::Type(ty) => tcx.lift(ty).map(|ty| ty.into()),
             GenericArgKind::Const(ct) => tcx.lift(ct).map(|ct| ct.into()),
             GenericArgKind::Ctor(ctor) => {
-                // Lift CtorDef by lifting its args.
-                let lifted_args = tcx.lift(ctor.0.0.args)?;
-                Some(tcx.mk_ctor_arg(ty::CtorDef {
-                    def_id: ctor.0.0.def_id,
-                    args: lifted_args,
-                }).into())
+                // Lift CtorArg: concrete ctors are lifted by lifting their args,
+                // but inference variables cannot be lifted (they're local to the current context).
+                match ctor.kind() {
+                    ty::CtorArgKind::Known(ctor_def) => {
+                        let lifted_args = tcx.lift(ctor_def.args)?;
+                        Some(tcx.mk_ctor_arg(ty::CtorArgKind::Known(ty::CtorDef {
+                            def_id: ctor_def.def_id,
+                            args: lifted_args,
+                        })).into())
+                    }
+                    ty::CtorArgKind::Var(_) => {
+                        // Inference variables cannot be lifted
+                        None
+                    }
+                }
             }
         }
     }

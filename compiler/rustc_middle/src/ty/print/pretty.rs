@@ -3391,7 +3391,14 @@ define_print_and_forward_display! {
             GenericArgKind::Type(ty) => ty.print(p)?,
             GenericArgKind::Const(ct) => ct.print(p)?,
             GenericArgKind::Ctor(ctor) => {
-                p.print_def_path(ctor.0.0.def_id, &[])?;
+                match ctor.kind() {
+                    ty::CtorArgKind::Known(ctor_def) => {
+                        p.print_def_path(ctor_def.def_id, &[])?;
+                    }
+                    ty::CtorArgKind::Var(vid) => {
+                        write!(p, "{:?}", vid)?;
+                    }
+                }
             }
         }
     }

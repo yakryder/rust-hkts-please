@@ -39,7 +39,7 @@ use tracing::{debug, instrument};
 use type_variable::TypeVariableOrigin;
 
 use crate::infer::snapshot::undo_log::UndoLog;
-use crate::infer::unify_key::{ConstVariableOrigin, ConstVariableValue, ConstVidKey};
+use crate::infer::unify_key::{ConstVariableOrigin, ConstVariableValue, ConstVidKey, CtorVariableOrigin, CtorVariableValue, CtorVidKey};
 use crate::traits::{
     self, ObligationCause, ObligationInspector, PredicateObligation, PredicateObligations,
     TraitEngine,
@@ -103,6 +103,9 @@ pub struct InferCtxtInner<'tcx> {
     /// Map from const parameter variable to the kind of const it represents.
     const_unification_storage: ut::UnificationTableStorage<ConstVidKey<'tcx>>,
 
+    /// Map from type constructor variable to the kind of constructor it represents.
+    ctor_unification_storage: ut::UnificationTableStorage<CtorVidKey<'tcx>>,
+
     /// Map from integral variable to the kind of integer it represents.
     int_unification_storage: ut::UnificationTableStorage<ty::IntVid>,
 
@@ -160,6 +163,7 @@ impl<'tcx> InferCtxtInner<'tcx> {
             projection_cache: Default::default(),
             type_variable_storage: Default::default(),
             const_unification_storage: Default::default(),
+            ctor_unification_storage: Default::default(),
             int_unification_storage: Default::default(),
             float_unification_storage: Default::default(),
             region_constraint_storage: Some(Default::default()),
@@ -218,6 +222,11 @@ impl<'tcx> InferCtxtInner<'tcx> {
     #[inline]
     fn const_unification_table(&mut self) -> UnificationTable<'_, 'tcx, ConstVidKey<'tcx>> {
         self.const_unification_storage.with_log(&mut self.undo_log)
+    }
+
+    #[inline]
+    fn ctor_unification_table(&mut self) -> UnificationTable<'_, 'tcx, CtorVidKey<'tcx>> {
+        self.ctor_unification_storage.with_log(&mut self.undo_log)
     }
 
     #[inline]
@@ -921,12 +930,17 @@ impl<'tcx> InferCtxt<'tcx> {
                     .vid;
                 ty::Const::new_var(self.tcx, const_var_id).into()
             }
-            // STEP 8: TypeCtor params need a dedicated GenericArgKind::Ctor variant
-            // and a corresponding inference variable kind. Until then, no code path
-            // should attempt to create an inference variable for a TypeCtor param.
             GenericParamDefKind::TypeCtor => {
-                bug!("cannot create inference variable for TypeCtor param `{}`; \
-                      GenericArgKind::Ctor not yet implemented (Step 8)", param.name)
+                // Create a constructor inference variable for the given
+                // type constructor parameter definition.
+                let origin = CtorVariableOrigin { param_def_id: Some(param.def_id), span };
+                let ctor_var_id = self
+                    .inner
+                    .borrow_mut()
+                    .ctor_unification_table()
+                    .new_key(CtorVariableValue::Unknown { origin, universe: self.universe() })
+                    .vid;
+                self.tcx.mk_ctor_var_arg(ctor_var_id).into()
             }
         }
     }

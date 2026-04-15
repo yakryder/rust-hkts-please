@@ -953,7 +953,16 @@ impl<'tcx> Printer<'tcx> for V0SymbolMangler<'tcx> {
                 GenericArgKind::Ctor(ctor) => {
                     // Mangle a type constructor as a path to its definition.
                     self.push("C");
-                    self.print_def_path(ctor.0.0.def_id, &[])?;
+                    match ctor.kind() {
+                        ty::CtorArgKind::Known(ctor_def) => {
+                            self.print_def_path(ctor_def.def_id, &[])?;
+                        }
+                        ty::CtorArgKind::Var(vid) => {
+                            // Mangle inference variables as 'X' followed by the variable index
+                            self.push("X");
+                            self.push_integer_62(vid.as_u32() as u64);
+                        }
+                    }
                 }
             }
         }

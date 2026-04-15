@@ -337,9 +337,25 @@ pub struct CtorDef<'tcx> {
     pub args: GenericArgsRef<'tcx>,
 }
 
-/// Newtype wrapper for an interned `CtorDef`, used as `GenericArgKind::Ctor`.
+/// Either a concrete type constructor or an inference variable.
+/// Used as the value type in `GenericArgKind::Ctor`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable)]
+pub enum CtorArgKind<'tcx> {
+    /// A concrete type constructor, e.g. `Option`, `Result<i32, _>`.
+    Known(CtorDef<'tcx>),
+    /// An inference variable for a type constructor.
+    Var(ty::CtorVid),
+}
+
+/// Newtype wrapper for an interned `CtorArgKind`, used as `GenericArgKind::Ctor`.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct CtorArg<'tcx>(pub Interned<'tcx, CtorDef<'tcx>>);
+pub struct CtorArg<'tcx>(pub Interned<'tcx, CtorArgKind<'tcx>>);
+
+impl<'tcx> CtorArg<'tcx> {
+    pub fn kind(self) -> CtorArgKind<'tcx> {
+        *self.0.0
+    }
+}
 
 impl<'tcx, E: crate::ty::codec::TyEncoder<'tcx>> rustc_serialize::Encodable<E> for CtorArg<'tcx> {
     fn encode(&self, e: &mut E) {
@@ -349,17 +365,30 @@ impl<'tcx, E: crate::ty::codec::TyEncoder<'tcx>> rustc_serialize::Encodable<E> f
 
 impl<'tcx, D: crate::ty::codec::TyDecoder<'tcx>> rustc_serialize::Decodable<D> for CtorArg<'tcx> {
     fn decode(d: &mut D) -> Self {
-        let ctor_def = CtorDef::decode(d);
-        d.interner().mk_ctor_arg(ctor_def)
+        let ctor_kind = CtorArgKind::decode(d);
+        d.interner().mk_ctor_arg(ctor_kind)
     }
 }
 
-impl<'tcx, CTX> rustc_data_structures::stable_hasher::HashStable<CTX> for CtorArg<'tcx>
-where
-    CtorDef<'tcx>: rustc_data_structures::stable_hasher::HashStable<CTX>,
+impl<'a, 'tcx> rustc_data_structures::stable_hasher::HashStable<crate::ich::StableHashingContext<'a>>
+    for CtorArg<'tcx>
 {
-    fn hash_stable(&self, hcx: &mut CTX, hasher: &mut rustc_data_structures::stable_hasher::StableHasher) {
-        self.0.hash_stable(hcx, hasher);
+    fn hash_stable(
+        &self,
+        hcx: &mut crate::ich::StableHashingContext<'a>,
+        hasher: &mut rustc_data_structures::stable_hasher::StableHasher,
+    ) {
+        match self.kind() {
+            CtorArgKind::Known(ctor_def) => {
+                0u8.hash_stable(hcx, hasher);
+                ctor_def.hash_stable(hcx, hasher);
+            }
+            CtorArgKind::Var(_) => {
+                // Inference variables can't be stably hashed, so just hash the discriminant.
+                // This is consistent with how Ty handles TyVid.
+                1u8.hash_stable(hcx, hasher);
+            }
+        }
     }
 }
 

@@ -86,19 +86,36 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
     type CtorArg = ty::CtorArg<'tcx>;
 
     fn apply_ctor(self, ctor: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
-        let ctor_def = ctor.0.0;
-        let all_args = self.mk_args_from_iter(
-            ctor_def.args.iter().chain(std::iter::once(arg.into())),
-        );
-        Ty::new_adt(self, self.adt_def(ctor_def.def_id), all_args)
+        match ctor.kind() {
+            ty::CtorArgKind::Known(ctor_def) => {
+                let all_args = self.mk_args_from_iter(
+                    ctor_def.args.iter().chain(std::iter::once(arg.into())),
+                );
+                Ty::new_adt(self, self.adt_def(ctor_def.def_id), all_args)
+            }
+            ty::CtorArgKind::Var(_) => {
+                bug!("apply_ctor called on inference variable CtorArg")
+            }
+        }
     }
 
     fn ctor_is_identity(self, ctor: ty::CtorArg<'tcx>) -> bool {
-        let ctor_def = ctor.0.0;
-        // A ctor is identity if its def_id points to a type parameter, not an ADT.
-        // We detect this by checking the DefKind: TypeParam means identity,
-        // anything else (Enum, Struct, etc.) means it's a concrete constructor.
-        matches!(self.def_kind(ctor_def.def_id), DefKind::TyParam)
+        match ctor.kind() {
+            ty::CtorArgKind::Known(ctor_def) => {
+                // A ctor is identity if its def_id points to a type parameter, not an ADT.
+                // We detect this by checking the DefKind: TypeParam means identity,
+                // anything else (Enum, Struct, etc.) means it's a concrete constructor.
+                matches!(self.def_kind(ctor_def.def_id), DefKind::TyParam)
+            }
+            ty::CtorArgKind::Var(_) => true,  // Inference vars are abstract like params, kept unresolved until unified
+        }
+    }
+
+    fn ctor_as_infer_var(self, ctor: ty::CtorArg<'tcx>) -> Option<ty::CtorVid> {
+        match ctor.kind() {
+            ty::CtorArgKind::Var(vid) => Some(vid),
+            ty::CtorArgKind::Known(_) => None,
+        }
     }
 
     fn mk_ty_ctor(self, param: ty::ParamCtor, arg: Ty<'tcx>) -> Ty<'tcx> {

@@ -105,10 +105,10 @@ impl GenericParamDef {
             ty::GenericParamDefKind::TypeCtor => {
                 // Error recovery: create a CtorArg with a dummy DefId.
                 // This is only hit during error recovery paths.
-                tcx.mk_ctor_arg(ty::CtorDef {
+                tcx.mk_ctor_arg(ty::CtorArgKind::Known(ty::CtorDef {
                     def_id: self.def_id,
                     args: tcx.mk_args(&[]),
-                }).into()
+                })).into()
             }
         }
     }

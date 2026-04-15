@@ -589,6 +589,15 @@ rustc_index::newtype_index! {
     pub struct FloatVid {}
 }
 
+rustc_index::newtype_index! {
+    /// A **type** **c**onstr**u**ct**or** **v**ariable **ID**.
+    #[encodable]
+    #[orderable]
+    #[debug_format = "?{}ctor"]
+    #[gate_rustc_only]
+    pub struct CtorVid {}
+}
+
 /// A placeholder for a type that hasn't been inferred yet.
 ///
 /// E.g., if we have an empty array (`[]`), then we create a fresh

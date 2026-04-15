@@ -67,11 +67,11 @@ use crate::traits;
 use crate::traits::solve::{ExternalConstraints, ExternalConstraintsData, PredefinedOpaques};
 use crate::ty::predicate::ExistentialPredicateStableCmpExt as _;
 use crate::ty::{
-    self, AdtDef, AdtDefData, AdtKind, Binder, Clause, Clauses, Const, GenericArg, GenericArgs,
-    GenericArgsRef, GenericParamDefKind, List, ListWithCachedTypeInfo, ParamConst, Pattern,
-    PatternKind, PolyExistentialPredicate, PolyFnSig, Predicate, PredicateKind, PredicatePolarity,
-    Region, RegionKind, ReprOptions, TraitObjectVisitor, Ty, TyKind, TyVid, ValTree, ValTreeKind,
-    Visibility,
+    self, AdtDef, AdtDefData, AdtKind, Binder, Clause, Clauses, Const, CtorArg, CtorArgKind,
+    GenericArg, GenericArgs, GenericArgsRef, GenericParamDefKind, List, ListWithCachedTypeInfo,
+    ParamConst, Pattern, PatternKind, PolyExistentialPredicate, PolyFnSig, Predicate,
+    PredicateKind, PredicatePolarity, Region, RegionKind, ReprOptions, TraitObjectVisitor, Ty,
+    TyKind, TyVid, ValTree, ValTreeKind, Visibility,
 };
 
 impl<'tcx> rustc_type_ir::inherent::DefId<TyCtxt<'tcx>> for DefId {
@@ -164,7 +164,7 @@ pub struct CtxtInterners<'tcx> {
     valtree: InternedSet<'tcx, ty::ValTreeKind<TyCtxt<'tcx>>>,
     patterns: InternedSet<'tcx, List<ty::Pattern<'tcx>>>,
     outlives: InternedSet<'tcx, List<ty::ArgOutlivesPredicate<'tcx>>>,
-    ctor_def: InternedSet<'tcx, ty::CtorDef<'tcx>>,
+    ctor_arg: InternedSet<'tcx, ty::CtorArgKind<'tcx>>,
 }
 
 impl<'tcx> CtxtInterners<'tcx> {
@@ -202,7 +202,7 @@ impl<'tcx> CtxtInterners<'tcx> {
             valtree: InternedSet::with_capacity(N),
             patterns: InternedSet::with_capacity(N),
             outlives: InternedSet::with_capacity(N),
-            ctor_def: InternedSet::with_capacity(N),
+            ctor_arg: InternedSet::with_capacity(N),
         }
     }
 
@@ -2076,6 +2076,7 @@ direct_interners! {
     adt_def: pub mk_adt_def_from_data(AdtDefData): AdtDef -> AdtDef<'tcx>,
     external_constraints: pub mk_external_constraints(ExternalConstraintsData<TyCtxt<'tcx>>):
         ExternalConstraints -> ExternalConstraints<'tcx>,
+    ctor_arg: pub mk_ctor_arg(CtorArgKind<'tcx>): CtorArg -> CtorArg<'tcx>,
 }
 
 macro_rules! slice_interners {
@@ -2321,12 +2322,8 @@ impl<'tcx> TyCtxt<'tcx> {
         )
     }
 
-    pub fn mk_ctor_arg(self, v: ty::CtorDef<'tcx>) -> ty::CtorArg<'tcx> {
-        ty::CtorArg(Interned::new_unchecked(
-            self.interners.ctor_def.intern(v, |v| {
-                InternedInSet(self.interners.arena.alloc(v))
-            }).0,
-        ))
+    pub fn mk_ctor_var_arg(self, vid: ty::CtorVid) -> ty::CtorArg<'tcx> {
+        self.mk_ctor_arg(ty::CtorArgKind::Var(vid))
     }
 
     pub fn mk_param_from_def(self, param: &ty::GenericParamDef) -> GenericArg<'tcx> {
@@ -2340,12 +2337,12 @@ impl<'tcx> TyCtxt<'tcx> {
                     .into()
             }
             GenericParamDefKind::TypeCtor => {
-                // Identity arg: F maps to the CtorDef for F's own DefId,
+                // Identity arg: F maps to the CtorArgKind::Known for F's own DefId,
                 // with no captured args (it's a param, not a partial application).
-                self.mk_ctor_arg(ty::CtorDef {
+                self.mk_ctor_arg(ty::CtorArgKind::Known(ty::CtorDef {
                     def_id: param.def_id,
                     args: self.mk_args(&[]),
-                }).into()
+                })).into()
             }
         }
     }
