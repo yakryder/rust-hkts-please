@@ -515,6 +515,11 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
             Ok(Ty::new_unsafe_binder(cx, relation.binders(*a_binder, *b_binder)?))
         }
 
+        (ty::Ctor(a_ctor, a_arg), ty::Ctor(b_ctor, b_arg)) if a_ctor == b_ctor => {
+            let arg = relation.relate(a_arg, b_arg)?;
+            Ok(Ty::new_ctor(cx, a_ctor, arg))
+        }
+
         _ => Err(TypeError::Sorts(ExpectedFound::new(a, b))),
     }
 }

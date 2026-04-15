@@ -1,5 +1,6 @@
-//@ known-bug: unknown
-// ICEs at: compiler/rustc_middle/src/ty/context.rs:2313
+//@ check-pass
+// Fixed in Session 9: type unification now handles Ctor types
+// Was ICEing at: compiler/rustc_middle/src/ty/context.rs:2313
 // bug!("mk_param_from_def: TypeCtor params not yet supported (Step 8)")
 //
 // When Step 8 is done: move to parse/gated-with-allow.rs or a new

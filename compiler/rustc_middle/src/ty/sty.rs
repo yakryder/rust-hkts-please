@@ -1163,6 +1163,10 @@ impl<'tcx> rustc_type_ir::inherent::Ty<TyCtxt<'tcx>> for Ty<'tcx> {
         Ty::new_unsafe_binder(interner, ty)
     }
 
+    fn new_ctor(interner: TyCtxt<'tcx>, ctor: ParamCtor, ty: Self) -> Self {
+        Ty::new_ctor(interner, ctor, ty)
+    }
+
     fn new_unit(interner: TyCtxt<'tcx>) -> Self {
         interner.types.unit
     }

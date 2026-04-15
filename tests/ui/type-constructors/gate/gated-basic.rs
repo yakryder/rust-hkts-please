@@ -1,4 +1,4 @@
-//@ known-bug: unknown
+//@ check-pass
 // Step 8 milestone: when this graduates to //@ check-pass, the feature works end-to-end.
 #![feature(type_constructors)]
 #![allow(incomplete_features)]

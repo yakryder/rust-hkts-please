@@ -746,6 +746,37 @@ You are a type theorist and compiler engineer working on a Rust compiler fork. Y
 
 ---
 
+## Session 9: Type Unification for Ctor Types ✅ COMPLETE
+
+**The problem:** Type constructor lowering was working — `F<A>` correctly lowered to `Ctor(ParamCtor, A)` — but unification failed during parameter binding type-checking because `Ctor` types had no handler in the type relation machinery.
+
+**The fix:** Added structural relation handler for `Ctor` types, mirroring the pattern used by other type constructors.
+
+**Changes:**
+1. `compiler/rustc_type_ir/src/relate.rs` - `structurally_relate_tys()`:
+   - Added match arm: `(ty::Ctor(a_ctor, a_arg), ty::Ctor(b_ctor, b_arg)) if a_ctor == b_ctor`
+   - Recursively relates arguments, returns reconstructed `Ctor` type
+   
+2. `compiler/rustc_type_ir/src/inherent.rs`:
+   - Added `fn new_ctor()` trait method to `Ty` trait
+   
+3. `compiler/rustc_middle/src/ty/sty.rs`:
+   - Implemented `new_ctor()` for concrete `Ty<'tcx>` type, calling `Ty::new_ctor(tcx, ctor, ty)`
+
+4. Test updates:
+   - Changed `gated-basic.rs`, `ice-fn-type-collection.rs`, `ice-struct-type-collection.rs` from `//@ known-bug` to `//@ check-pass`
+   - All three tests now compile successfully
+
+**Verification:**
+- `./x build compiler --stage 1` — ✅ Success (7m 18s)
+- `./x test tests/ui/type-constructors/ --stage 1` — ✅ All pass (4 passed, 5 ignored/up-to-date)
+
+**Key insight:** The unification fix is minimal and surgical. No new type variants, no representation changes. Just one structural pattern added to the type relation machinery. This is what happens when type construction is done right upstream — the solver can extend naturally.
+
+**End-to-end:** Functions and structs generic over type constructors now type-check cleanly. The MVP feature is complete.
+
+---
+
 ## Session 3 Progress (2026-03-28)
 
 **Phase C (rustc_infer): ✅ COMPLETE**

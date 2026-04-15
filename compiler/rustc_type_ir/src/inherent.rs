@@ -123,6 +123,8 @@ pub trait Ty<I: Interner<Ty = Self>>:
 
     fn new_unsafe_binder(interner: I, ty: ty::Binder<I, I::Ty>) -> Self;
 
+    fn new_ctor(interner: I, ctor: I::ParamCtor, ty: Self) -> Self;
+
     fn tuple_fields(self) -> I::Tys;
 
     fn to_opt_closure_kind(self) -> Option<ty::ClosureKind>;
