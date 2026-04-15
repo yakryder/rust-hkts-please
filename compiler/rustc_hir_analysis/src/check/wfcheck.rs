@@ -1639,11 +1639,24 @@ fn check_fn_or_method<'tcx>(
         }));
 
     for (idx, ty) in sig.inputs_and_output.iter().enumerate() {
-        wfcx.register_wf_obligation(
-            arg_span(idx),
-            Some(WellFormedLoc::Param { function: def_id, param_idx: idx }),
-            ty.into(),
-        );
+        match ty.kind() {
+            ty::Ctor(_, inner_ty) => {
+                // For constructor applications, check well-formedness of the inner type.
+                // The constructor itself is parametric and abstractly sized.
+                wfcx.register_wf_obligation(
+                    arg_span(idx),
+                    Some(WellFormedLoc::Param { function: def_id, param_idx: idx }),
+                    (*inner_ty).into(),
+                );
+            }
+            _ => {
+                wfcx.register_wf_obligation(
+                    arg_span(idx),
+                    Some(WellFormedLoc::Param { function: def_id, param_idx: idx }),
+                    ty.into(),
+                );
+            }
+        }
     }
 
     check_where_clauses(wfcx, def_id);
@@ -1688,12 +1701,15 @@ fn check_fn_or_method<'tcx>(
             hir::FnRetTy::DefaultReturn(_) => body.value.span,
         };
 
-        wfcx.register_bound(
-            ObligationCause::new(span, def_id, ObligationCauseCode::SizedReturnType),
-            wfcx.param_env,
-            sig.output(),
-            tcx.require_lang_item(LangItem::Sized, span),
-        );
+        // Constructor applications are abstractly sized; don't require Sized on them.
+        if !matches!(sig.output().kind(), ty::Ctor(_, _)) {
+            wfcx.register_bound(
+                ObligationCause::new(span, def_id, ObligationCauseCode::SizedReturnType),
+                wfcx.param_env,
+                sig.output(),
+                tcx.require_lang_item(LangItem::Sized, span),
+            );
+        }
     }
 }
 

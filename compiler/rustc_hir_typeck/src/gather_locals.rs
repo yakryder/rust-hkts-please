@@ -185,7 +185,10 @@ impl<'a, 'tcx> Visitor<'tcx> for GatherLocalsVisitor<'a, 'tcx> {
             let var_ty = self.assign(p.span, p.hir_id, None);
 
             if let Some((ty_span, hir_id)) = self.outermost_fn_param_pat {
-                if !self.fcx.tcx.features().unsized_fn_params() {
+                // Constructor applications are abstractly sized; don't require Sized on them.
+                if !matches!(var_ty.kind(), ty::Ctor(_, _))
+                    && !self.fcx.tcx.features().unsized_fn_params()
+                {
                     self.fcx.require_type_is_sized(
                         var_ty,
                         ty_span,

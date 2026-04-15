@@ -2004,7 +2004,8 @@ impl<'tcx> Ty<'tcx> {
                 .sizedness_constraint(tcx, sizedness)
                 .is_none_or(|ty| ty.instantiate(tcx, args).has_trivial_sizedness(tcx, sizedness)),
 
-            ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) | ty::Bound(..) | ty::Ctor(_, _) => false,
+            ty::Ctor(_, _) => true,  // Constructor applications are trivially sized
+            ty::Alias(..) | ty::Param(_) | ty::Placeholder(..) | ty::Bound(..) => false,
 
             ty::Infer(ty::TyVar(_)) => false,
 
