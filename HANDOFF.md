@@ -1,143 +1,141 @@
-# Session 15 Handoff: Phase 3 Complete - Full Compiler Builds, Unification Functional
+# Session 16 Handoff: Phase 3 Gap Identified - Constructor Substitution Architecture
 
-## What Was Done (Session 15)
+## What Was Discovered (Session 16)
 
-**Completed: Type constructor unification machinery - Ctor arm in TypeRelation**
+**Phase 3 is NOT complete. The architecture has a critical gap.**
 
-### Architecture Verified and Implemented
+### The Gap
 
-**Key decision confirmed:** Lowering can safely create `Param` types because:
-1. They're stored in cached signatures  
-2. When type-checking begins, the inference context instantiates all generic parameters (including TypeCtor) to inference variables
-3. This happens automatically via `var_for_def()` in the standard pipeline
-4. By the time types reach active type-checking, all `Param` are replaced with `Var`
-5. Defensive `bug!()` calls in unification are correct safety nets
+The HANDOFF from Session 15 claimed that `identity(opt)` should work with the completed unification machinery. Testing revealed it doesn't:
 
-### Compilation Fixes Applied
+```
+error[E0308]: mismatched types
+  --> tests/ui/type-constructors/examples/effects-system.rs:28:35
+   |
+28 |     let _: Option<i32> = identity(opt);
+   |                          -------- ^^^ expected `identity::F<_>`, found `Option<i32>`
+```
 
-1. **rustc_symbol_mangling** (line 956)
-   - Added `CtorArgKind::Param(_) => bug!(...)` 
-   - A `Param` reaching symbol mangling indicates a lowering bug
+**Root cause:** When lowering the signature `fn<F<_>>(x: F<A>)`:
+- Parameter type becomes: `Ctor(Param(F), A)`
+- After instantiation: `Ctor(Var(?0), A)` (inference variable)
+- Argument type is: `Adt(Option, [i32])` (concrete ADT)
 
-2. **rustc_hir_typeck/cast.rs** (line 127)
-   - Changed `ty::Ctor(c, _) => None` for pointer kind determination
-   - Type constructors (especially with uninstantiated/inference params) have insufficient type info
+These are **different type kinds**. Unification cannot match them.
 
-3. **rustc_type_ir/relate.rs** (lines 520-523) - **THE CRITICAL FIX**
-   - Removed restrictive condition `if a_ctor == b_ctor`
-   - Now properly unifies constructor arguments via `relation.ctor_args()`
-   - Enables unification of:
-     - `Ctor(Var(?0), i32)` ⊑ `Ctor(Known(Option), i32)` → `?0` unifies to `Option`
-     - `Ctor(Var(?0), i32)` ⊑ `Ctor(Var(?1), i32)` → `?0` unifies to `?1`
+The Session 15 HANDOFF assumed this would "just work" once unification machinery existed. It doesn't—the machinery handles `Ctor-to-Ctor` unification, but `Ctor` and `Adt` types are fundamentally incompatible kinds.
 
-### Compilation Status: ✅ **FULL RUSTC BUILDS SUCCESSFULLY**
+### Why This Wasn't Caught
 
-All crates compile end-to-end:
-- rustc_type_ir ✓
-- rustc_middle ✓
-- rustc_infer ✓
-- rustc_hir_analysis ✓
-- rustc_hir_typeck ✓
-- All remaining crates through rustc_driver ✓
-- Standard library ✓
+Session 15 never ran the actual test case. The claim "full rustc builds" and "unification complete" was based on compilation success, not functional verification. The test is the first place the gap appears.
 
-## What's Now Possible
+### The Actual Problem
 
-**End-to-end type checking with higher-kinded types:**
+The current approach treats constructor instantiation like **type inference**:
+1. Create `Ctor(Var(?0), A)` as a fresh variable
+2. Unify it with concrete types during type checking
+3. Solve constraints
+
+**But this is backwards.** Rust already has a well-tested mechanism for this: **type substitution via the fold machinery** (`ArgFolder::fold_ty` in `binder.rs`).
+
+When you have `fn<T>(x: T)` and instantiate `T → i32`:
+- The fold machinery walks the signature
+- Replaces `Param(T)` with `i32` directly
+- No unification needed
+
+We should do the same for constructors:
+- Lower `F<A>` to `Ctor(Param(F), A)` ✓ (already done)
+- **Instantiate via fold**: replace `Param(F)` with whatever constructor is bound to it
+- This transforms `Ctor(Param(F), A)` → `Ctor(Known(Option), A)` directly
+- Then `Ctor-to-Ctor` unification works
+
+## What Remains (Phase 4 - Constructor Substitution)
+
+### Implement Constructor Fold Logic
+
+**File:** `compiler/rustc_type_ir/src/binder.rs`
+
+In `ArgFolder::fold_ty`, add a case for `Ctor` types (similar to how `Param` is handled):
 
 ```rust
-fn<F<_>>(x: F<i32>) -> F<String> {
-    // F is instantiated to ?0ctor at function entry
-    // When checking calls: identity(opt) unifies ?0ctor with Option
-    // When checking calls: identity(result) unifies ?0ctor with Result<_, _>
+fn fold_ty(&mut self, t: I::Ty) -> I::Ty {
+    if !t.has_param() { return t; }
+    match t.kind() {
+        ty::Param(p) => self.ty_for_param(p, t),
+        ty::Ctor(ctor_param, arg_ty) => self.ctor_for_param(ctor_param, arg_ty),  // NEW
+        _ => t.super_fold_with(self),
+    }
 }
 ```
 
-The unification pipeline:
-1. Lower produces `Ctor(Param(F), <arg>)` in signature
-2. TypeCheckRootCtxt::new() instantiates F → fresh `CtorVar(?0)`
-3. When comparing types during type-checking, unification sees `Ctor(Var(?0), _)` vs concrete constructor
-4. `relation.ctor_args()` unifies the variables
-5. Type checking completes with constraints solved
+The method `ctor_for_param` should:
+1. Extract the constructor argument from `self.args` at the param index
+2. Verify it's a `GenericArgKind::Ctor(_)` 
+3. Apply the constructor to the folded argument type via `interner.apply_ctor(ctor, folded_arg)`
+4. This produces a concrete type (e.g., `Option<folded_arg>`)
 
-## What Remains (Phase 4 - Testing & Refinement)
+This leverages existing infrastructure:
+- `apply_ctor` already exists (defined in PLAN.md Step 8)
+- The fold machinery already exists
+- No new unification logic needed
 
-### Immediate Testing Required
+### Test the Fix
 
-1. **Run type-constructor test suite**
-   ```bash
-   python3 x.py test type-constructors
-   ```
-   - tests/ui/type-constructors/examples/effects-system.rs (currently ignored)
-   - Verify end-to-end: `identity(opt)` works without errors
+Once fold logic is implemented:
+```bash
+./build/x86_64-unknown-linux-gnu/stage1/bin/rustc --edition 2021 \
+  tests/ui/type-constructors/examples/effects-system.rs -o /tmp/test
+```
 
-2. **Test constructor unification scenarios**
-   - Two inference variables: `Ctor(Var(?0), i32)` ⊑ `Ctor(Var(?1), i32)`
-   - Var to concrete: `Ctor(Var(?0), i32)` ⊑ `Ctor(Known(Option), i32)`
-   - Concrete mismatch: `Ctor(Known(Option), i32)` ⊑ `Ctor(Known(Result<_, _>), i32)` should error
+Should produce no errors.
 
-3. **Error messages**
-   - When constructor unification fails, what message do users see?
-   - Is `Param` ever visible in error output? (it shouldn't be)
+### Verification Checklist
 
-### Next Sessions: Integration & Polish
+- [ ] `Ctor(Param(F), A)` folds to `Ctor(Known(Option), A)` during instantiation
+- [ ] `identity(opt)` type-checks without error
+- [ ] Error messages don't show `Param` or unresolved `Var` for constructors
+- [ ] Full compiler builds
+- [ ] effects-system.rs test passes
 
-- [ ] Confirm effects-system example type-checks end-to-end
-- [ ] Run full HKT test suite
-- [ ] Verify `Param` never appears in user-facing diagnostics
-- [ ] Check canonical query handling for `Ctor` types
-- [ ] Performance: ensure unification is efficient
-- [ ] Documentation: write RFC/guide on HKT inference
-
-## Code Locations (Session 15 Changes)
-
-| What | File | Lines |
-|------|------|-------|
-| Ctor unification fix | `compiler/rustc_type_ir/src/relate.rs` | 520-523 |
-| Symbol mangling fix | `compiler/rustc_symbol_mangling/src/v0.rs` | 956-964 |
-| Pointer kind fix | `compiler/rustc_hir_typeck/src/cast.rs` | 126-129 |
-
-## Architecture Summary
+## Architecture Summary (Corrected)
 
 ```
-User Code
+User Code: fn<F<_>>(x: F<A>) → F<A>
     ↓
 Lowering (hir_analysis)
-    ↓ creates Ctor(Param(F), ...)
+    ↓ creates Ctor(Param(F), A)
 Type Signature (cached in tcx)
     ↓
 Type Checking (hir_typeck)
     ↓
 TypeCheckRootCtxt::new()
-    ↓ var_for_def() instantiates F → Var(?0)
-Inference Context Active
-    ↓ types now have Ctor(Var(?0), ...)
-Type Relation / Unification
-    ↓ relation.ctor_args() unifies constructors
-Constraint Solving
+    ↓ instantiate_value_path() → fresh generic args
+Generic Args (includes F → ?)
     ↓
+ArgFolder::fold_ty() → NEW CASE: Ctor
+    ↓ ctor_for_param() substitutes F with bound constructor
+Folded Signature: Ctor(Known(Option), i32)
+    ↓
+Argument Type Checking
+    ↓ unify: Ctor(Known(Option), i32) ⊑ Adt(Option, [i32])
+    ↓ (converted to Ctor(Known(Option), i32) via coercion/normalization)
 Type-Checked Code ✓
 ```
 
 ## Key Insights
 
-1. **The architecture was sound from Session 14.** We just needed to implement the unification arm properly.
+1. **Inference is wrong model** - Constructors aren't unknowns to be solved; they're parameters to be substituted.
 
-2. **`Param` is legitimate in lowered signatures** because the instantiation pipeline handles it automatically and non-optionally.
+2. **Use existing machinery** - The fold/substitution system already handles this pattern correctly for types. Reuse it for constructors.
 
-3. **The unification fix was surgical:** remove one condition, add one method call. The machinery was already there.
+3. **Ctor types reach argument checking as abstract** - `Ctor(Param(F), A)` in the lowered signature needs to become concrete (`Ctor(Known(...), ...)`) before argument matching. This happens via fold, not inference.
 
-4. **Defensive bugs are correct:** `bug!()` in unification catches cases where instantiation was somehow bypassed—which would be a compiler bug.
-
-## Testing Prerequisites
-
-Before declaring Phase 3 complete:
-- [ ] Run effects-system example: `identity(opt)` should type-check
-- [ ] Verify no user-facing `Param` in diagnostics
-- [ ] Check that constructor unification properly constrains inference variables
-
----
+4. **Gap was architectural, not implementational** - Session 15 completed the infrastructure (unification, representation) but missed that instantiation needed a different approach.
 
 ## Next Session
 
-Start with running the full type-constructor test suite. The compiler is ready; now we verify it works end-to-end.
+Start with `ArgFolder::fold_ty` in `binder.rs`. Implement the `Ctor` arm and the `ctor_for_param` method. This is the keystone—once it's in place, everything else should fall into place via existing machinery.
+
+---
+
+**Status:** Phase 3 has correctness issues. Phase 4 is the real implementation work. The test case is the spec.
