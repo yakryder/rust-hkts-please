@@ -124,7 +124,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // We should really try to normalize here.
             ty::Alias(_, pi) => Some(PointerKind::OfAlias(pi)),
             ty::Param(p) => Some(PointerKind::OfParam(p)),
-            ty::Ctor(c, _) => Some(PointerKind::OfParam(ty::ParamTy { index: c.index, name: c.name })),
+            // Type constructors (especially with uninstantiated parameters) have insufficient
+            // type information to determine pointer kind.
+            ty::Ctor(_, _) => None,
             // Insufficient type information.
             ty::Placeholder(..) | ty::Bound(..) | ty::Infer(_) => None,
 

@@ -962,6 +962,9 @@ impl<'tcx> Printer<'tcx> for V0SymbolMangler<'tcx> {
                             self.push("X");
                             self.push_integer_62(vid.as_u32() as u64);
                         }
+                        ty::CtorArgKind::Param(_) => {
+                            bug!("uninstantiated type constructor parameter in symbol mangling")
+                        }
                     }
                 }
             }
