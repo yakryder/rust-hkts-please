@@ -251,8 +251,13 @@ impl<I: Interner> FlagComputation<I> {
                 self.add_flags(TypeFlags::HAS_TY_PARAM);
             }
 
-            ty::Ctor(_, ty) => {
-                self.add_flags(TypeFlags::HAS_TY_PARAM);
+            ty::Ctor(ctor_arg, ty) => {
+                // Only set HAS_TY_PARAM if the ctor_arg is a parameter.
+                // Param ctors need instantiation, but Known and Var ctors do not
+                // affect the has-param flag.
+                if I::ctor_arg_is_param(ctor_arg) {
+                    self.add_flags(TypeFlags::HAS_TY_PARAM);
+                }
                 self.add_ty(ty);
             }
 

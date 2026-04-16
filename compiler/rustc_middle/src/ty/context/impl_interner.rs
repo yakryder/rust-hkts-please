@@ -131,6 +131,10 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
         }
     }
 
+    fn ctor_arg_is_param(ctor: ty::CtorArg<'tcx>) -> bool {
+        matches!(ctor.kind(), ty::CtorArgKind::Param(_))
+    }
+
     fn mk_ty_ctor(self, ctor_arg: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
         Ty::new_ctor(self, ctor_arg, arg)
     }
