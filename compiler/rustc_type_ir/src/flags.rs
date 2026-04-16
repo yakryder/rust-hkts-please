@@ -252,11 +252,12 @@ impl<I: Interner> FlagComputation<I> {
             }
 
             ty::Ctor(ctor_arg, ty) => {
-                // Only set HAS_TY_PARAM if the ctor_arg is a parameter.
-                // Param ctors need instantiation, but Known and Var ctors do not
-                // affect the has-param flag.
                 if I::ctor_arg_is_param(ctor_arg) {
                     self.add_flags(TypeFlags::HAS_TY_PARAM);
+                } else if I::ctor_arg_is_var(ctor_arg) {
+                    // Ctor inference variables need to be resolved during inference,
+                    // so set HAS_TY_INFER so that folders/resolvers visit this type.
+                    self.add_flags(TypeFlags::HAS_TY_INFER);
                 }
                 self.add_ty(ty);
             }

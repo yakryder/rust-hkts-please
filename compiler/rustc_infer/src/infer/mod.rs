@@ -825,6 +825,20 @@ impl<'tcx> InferCtxt<'tcx> {
         ty::Const::new_var(self.tcx, vid)
     }
 
+    pub fn next_ctor_var(&self, span: Span) -> ty::CtorArg<'tcx> {
+        self.next_ctor_var_with_origin(CtorVariableOrigin { span, param_def_id: None })
+    }
+
+    pub fn next_ctor_var_with_origin(&self, origin: CtorVariableOrigin) -> ty::CtorArg<'tcx> {
+        let vid = self
+            .inner
+            .borrow_mut()
+            .ctor_unification_table()
+            .new_key(CtorVariableValue::Unknown { origin, universe: self.universe() })
+            .vid;
+        self.tcx.mk_ctor_arg(ty::CtorArgKind::Var(vid))
+    }
+
     pub fn next_int_var(&self) -> Ty<'tcx> {
         let next_int_var_id =
             self.inner.borrow_mut().int_unification_table().new_key(ty::IntVarValue::Unknown);
@@ -1105,7 +1119,9 @@ impl<'tcx> InferCtxt<'tcx> {
         }
     }
 
+    #[allow(rustc::usage_of_type_ir_traits)]
     pub fn shallow_resolve(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        use rustc_type_ir::Interner as _;
         if let ty::Infer(v) = *ty.kind() {
             match v {
                 ty::TyVar(v) => {
@@ -1165,6 +1181,21 @@ impl<'tcx> InferCtxt<'tcx> {
 
                 ty::FreshTy(_) | ty::FreshIntTy(_) | ty::FreshFloatTy(_) => ty,
             }
+        } else if let ty::Ctor(ctor_arg, arg_ty) = *ty.kind() {
+            if let ty::CtorArgKind::Var(vid) = ctor_arg.kind() {
+                let value =
+                    self.inner
+                        .borrow_mut()
+                        .ctor_unification_table()
+                        .probe_value(unify_key::CtorVidKey::from(vid));
+                if let crate::infer::unify_key::CtorVariableValue::Known { value: ctor_def } =
+                    value
+                {
+                    let known_ctor = self.tcx.mk_ctor_arg(ty::CtorArgKind::Known(ctor_def));
+                    return self.tcx.apply_ctor(known_ctor, arg_ty);
+                }
+            }
+            ty
         } else {
             ty
         }
@@ -1376,6 +1407,10 @@ impl<'tcx> InferCtxt<'tcx> {
                     self.next_region_var(RegionVariableOrigin::BoundRegion(span, br, lbrct)).into()
                 }
                 ty::BoundVariableKind::Const => self.next_const_var(span).into(),
+                ty::BoundVariableKind::Ctor(_) => {
+                    eprintln!("instantiate_binder_with_fresh_vars: creating fresh ctor var");
+                    self.next_ctor_var(span).into()
+                }
             };
             args.push(arg);
         }

@@ -147,6 +147,9 @@ pub trait Interner:
     /// Check if a ctor_arg is a parameter (as opposed to Known or Var).
     fn ctor_arg_is_param(ctor: Self::CtorArg) -> bool;
 
+    /// Check if a ctor_arg is an inference variable.
+    fn ctor_arg_is_var(ctor: Self::CtorArg) -> bool;
+
     /// Construct a `Ctor(ctor_arg, arg)` type.
     fn mk_ty_ctor(self, ctor_arg: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
 

@@ -293,8 +293,11 @@ fn late_arg_as_bound_arg<'tcx>(param: &GenericParam<'tcx>) -> ty::BoundVariableK
         GenericParamKind::Lifetime { .. } => {
             ty::BoundVariableKind::Region(ty::BoundRegionKind::Named(def_id))
         }
-        GenericParamKind::Type { .. } | GenericParamKind::TypeCtor => {
+        GenericParamKind::Type { .. } => {
             ty::BoundVariableKind::Ty(ty::BoundTyKind::Param(def_id))
+        }
+        GenericParamKind::TypeCtor => {
+            ty::BoundVariableKind::Ctor(ty::BoundCtorKind::Param(def_id))
         }
         GenericParamKind::Const { .. } => ty::BoundVariableKind::Const,
     }
@@ -310,8 +313,11 @@ fn generic_param_def_as_bound_arg<'tcx>(
         ty::GenericParamDefKind::Lifetime => {
             ty::BoundVariableKind::Region(ty::BoundRegionKind::Named(param.def_id))
         }
-        ty::GenericParamDefKind::Type { .. } | ty::GenericParamDefKind::TypeCtor => {
+        ty::GenericParamDefKind::Type { .. } => {
             ty::BoundVariableKind::Ty(ty::BoundTyKind::Param(param.def_id))
+        }
+        ty::GenericParamDefKind::TypeCtor => {
+            ty::BoundVariableKind::Ctor(ty::BoundCtorKind::Param(param.def_id))
         }
         ty::GenericParamDefKind::Const { .. } => ty::BoundVariableKind::Const,
     }

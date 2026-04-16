@@ -331,6 +331,10 @@ impl<'tcx> Stable<'tcx> for ty::BoundVariableKind<'tcx> {
                 BoundVariableKind::Region(bound_region_kind.stable(tables, cx))
             }
             ty::BoundVariableKind::Const => BoundVariableKind::Const,
+            ty::BoundVariableKind::Ctor(_) => {
+                // TODO: Implement stable representation for constructor parameters
+                BoundVariableKind::Const  // Placeholder
+            }
         }
     }
 }

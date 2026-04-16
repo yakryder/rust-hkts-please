@@ -176,7 +176,7 @@ impl<'tcx> UnifyValue for ConstVariableValue<'tcx> {
 
 #[derive(Copy, Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct CtorVariableOrigin {
+pub struct CtorVariableOrigin {
     pub span: Span,
     /// `DefId` of the type constructor parameter this was instantiated for, if any.
     ///

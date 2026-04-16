@@ -834,14 +834,20 @@ impl<'a, I: Interner> ArgFolder<'a, I> {
     }
 
     fn ctor_for_param(&mut self, ctor_arg: I::CtorArg, arg_ty: I::Ty) -> I::Ty {
+        eprintln!("ctor_for_param: ctor={:?}, arg={:?}", ctor_arg, arg_ty);
         let substituted_arg = arg_ty.fold_with(self);
 
         // If this is an uninstantiated parameter, look it up in the current substitutions.
         // This converts Param(ParamCtor) to the actual CtorArg being substituted.
         let actual_ctor = if let Some(param_ctor) = self.cx.ctor_arg_as_param(ctor_arg) {
+            eprintln!("  -> ctor is param: {param_ctor:?}, args={:?}", self.args);
             let opt_ctor = self.args.get(param_ctor.index() as usize).map(|a| a.kind());
+            eprintln!("  -> opt_ctor={:?}", opt_ctor);
             match opt_ctor {
-                Some(ty::GenericArgKind::Ctor(ctor)) => ctor,
+                Some(ty::GenericArgKind::Ctor(ctor)) => {
+                    eprintln!("  -> found ctor: {ctor:?}");
+                    ctor
+                },
                 Some(other) => panic!(
                     "expected ctor for `{param_ctor:?}` (index {}) but found {other:?}",
                     param_ctor.index()
@@ -853,17 +859,23 @@ impl<'a, I: Interner> ArgFolder<'a, I> {
                 ),
             }
         } else {
+            eprintln!("  -> ctor is not param, keeping as is");
             ctor_arg
         };
 
         // Check if this is an identity ctor (the param hasn't been substituted yet).
         // Identity ctors should not be applied; instead reconstruct the Ctor type.
+        eprintln!("  -> actual_ctor={:?}, is_identity={}", actual_ctor, self.cx.ctor_is_identity(actual_ctor));
         if self.cx.ctor_is_identity(actual_ctor) {
-            return self.cx.mk_ty_ctor(actual_ctor, substituted_arg);
+            let result = self.cx.mk_ty_ctor(actual_ctor, substituted_arg);
+            eprintln!("  -> returning identity ctor: {result:?}");
+            return result;
         }
 
         // Otherwise, this is a concrete constructor — apply it
-        self.cx.apply_ctor(actual_ctor, substituted_arg)
+        let result = self.cx.apply_ctor(actual_ctor, substituted_arg);
+        eprintln!("  -> returning applied ctor: {result:?}");
+        result
     }
 
     #[cold]
@@ -1108,10 +1120,22 @@ pub enum BoundTyKind<I: Interner> {
     feature = "nightly",
     derive(Encodable_NoContext, Decodable_NoContext, HashStable_NoContext)
 )]
+pub enum BoundCtorKind<I: Interner> {
+    Anon,
+    Param(I::DefId),
+}
+
+#[derive_where(Clone, Copy, PartialEq, Eq, Debug, Hash; I: Interner)]
+#[derive(Lift_Generic)]
+#[cfg_attr(
+    feature = "nightly",
+    derive(Encodable_NoContext, Decodable_NoContext, HashStable_NoContext)
+)]
 pub enum BoundVariableKind<I: Interner> {
     Ty(BoundTyKind<I>),
     Region(BoundRegionKind<I>),
     Const,
+    Ctor(BoundCtorKind<I>),
 }
 
 impl<I: Interner> BoundVariableKind<I> {
@@ -1133,6 +1157,13 @@ impl<I: Interner> BoundVariableKind<I> {
         match self {
             BoundVariableKind::Const => (),
             _ => panic!("expected a const, but found another kind"),
+        }
+    }
+
+    pub fn expect_ctor(self) -> BoundCtorKind<I> {
+        match self {
+            BoundVariableKind::Ctor(ctor) => ctor,
+            _ => panic!("expected a ctor, but found another kind"),
         }
     }
 }

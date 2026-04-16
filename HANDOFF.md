@@ -1,132 +1,68 @@
-# Session 18 Handoff: Path B Implemented, Three Gaps Remain
+# Session 20 Handoff
 
-## What Was Done This Session
+## What Was Done
 
-**Established Path B as the correct architectural approach:**
-- Rejected adding `(Ctor, Adt)` unification to `structurally_relate_tys` (wrong level)
-- Chose: decompose `Option<i32>` → `Ctor(Known(Option), i32)` *before* relating, so both sides are `Ctor` and the existing `ctor_args(Var, Known)` machinery fires
+Added BoundVariableKind::Ctor infrastructure for ctor parameters:
 
-**Implemented:**
-1. `decompose_ctor_application` on `Interner` trait (`compiler/rustc_type_ir/src/interner.rs`)
-2. Implementation for 1-ary ADTs (`compiler/rustc_middle/src/ty/context/impl_interner.rs`):
-   - `Option<i32>` → `Some((Known(CtorDef { def_id: Option, args: [] }), i32))`
-   - Only handles `args.len() == 1` for now (covers Option, Vec, Box)
-3. New match arm in `type_relating.rs::tys()` (`compiler/rustc_infer/src/infer/relate/type_relating.rs:229`):
-   ```rust
-   (&ty::Ctor(ctor_arg, a_arg), _)
-       if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
-   {
-       if let Some((b_ctor, b_arg)) = decompose_ctor_application_helper(infcx.tcx, b) {
-           self.ctor_args(ctor_arg, b_ctor)?;
-           self.relate(a_arg, b_arg)?;
-       } else {
-           super_combine_tys(infcx, self, a, b)?;
-       }
-   }
-   ```
-   With helpers at lines ~15-35 using `#[allow(rustc::usage_of_type_ir_traits)]`.
+1. **BoundCtorKind enum** (`rustc_type_ir/src/binder.rs:1116`): mirrors BoundTyKind with Anon/Param variants
+2. **BoundVariableKind::Ctor** variant added to enum
+3. **Updated bound var lowering** (`rustc_hir_analysis/src/collect/resolve_bound_vars.rs`):
+   - `late_arg_as_bound_arg`: TypeCtor → BoundVariableKind::Ctor(Param(def_id))
+   - `generic_param_def_as_bound_arg`: same conversion for GenericParamDef
+4. **Fresh ctor var creation** (`rustc_infer/src/infer/mod.rs`):
+   - `next_ctor_var()` / `next_ctor_var_with_origin()` methods
+   - `instantiate_binder_with_fresh_vars`: handles BoundVariableKind::Ctor → calls next_ctor_var()
+5. **Stable conversion stub** (`rustc_public/src/unstable/convert/stable/ty.rs`): placeholder for BoundVariableKind::Ctor
 
-**Compiles clean. Test still fails with same error.**
+All crates compile. **Test still fails with same error**: fresh_args contains `Known(identity::F)` not `Var(?c)`.
 
 ---
 
-## Why The Test Still Fails: Three Gaps
+## The Remaining Gap
 
-### Gap 1: Symmetric arm missing (most likely cause of arm not firing)
+**Diagnostic finding**: `instantiate_binder_with_fresh_vars` is creating fresh ctor vars, but the function call still receives `Known(identity::F)` instead of `Var(?c)` in fresh_args.
 
-The current arm matches `(Ctor(?v, _), _)` — i.e., when `a` is the `Ctor` type. But when checking `identity(opt)`, rustc may pass `a = Option<i32>` (actual) and `b = Ctor(?v, ?A)` (expected param type). Need the mirror:
+**Root cause**: Unknown. Either:
+1. BoundVariableKind::Ctor is NOT being emitted during lowering (late_arg_as_bound_arg not reachable for ctor params)
+2. Or the bound vars collection doesn't include ctor params
+3. Or fresh_args creation bypasses instantiate_binder_with_fresh_vars entirely for this signature
 
-```rust
-(_, &ty::Ctor(ctor_arg, b_arg))
-    if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
-{
-    if let Some((a_ctor, a_arg)) = decompose_ctor_application_helper(infcx.tcx, a) {
-        self.ctor_args(a_ctor, ctor_arg)?;
-        self.relate(a_arg, b_arg)?;
-    } else {
-        super_combine_tys(infcx, self, a, b)?;
-    }
-}
-```
-
-**File:** `compiler/rustc_infer/src/infer/relate/type_relating.rs` — add immediately after the existing `(&ty::Ctor(...), _)` arm (around line 238).
-
-### Gap 2: `shallow_resolve` does not resolve Ctor types
-
-`InferCtxt::shallow_resolve` (`compiler/rustc_infer/src/infer/mod.rs:1108`) only resolves `ty::Infer(TyVar(...))`. A `Ctor(Var(?v), i32)` type is NOT a `ty::Infer` — it's a `ty::Ctor`. So even after `?v = Known(Option)` is recorded in the ctor unification table, `shallow_resolve(Ctor(Var(?v), i32))` returns `Ctor(Var(?v), i32)` unchanged.
-
-**Fix needed:** Extend `shallow_resolve` to handle `ty::Ctor`:
-
-```rust
-// In InferCtxt::shallow_resolve, after the existing ty::Infer match:
-pub fn shallow_resolve(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
-    if let ty::Infer(v) = *ty.kind() {
-        // ... existing TyVar/IntVar/FloatVar handling ...
-    } else if let ty::Ctor(ctor_arg, arg_ty) = *ty.kind() {
-        // If ctor arg is a solved inference variable, apply it
-        if let ty::CtorArgKind::Var(vid) = ctor_arg.kind() {
-            let value = self.inner.borrow_mut().ctor_unification_table().probe_value(vid);
-            if let crate::infer::CtorVariableValue::Known { value: ctor_def } = value {
-                let known_ctor = self.tcx.mk_ctor_arg(ty::CtorArgKind::Known(ctor_def));
-                return self.tcx.apply_ctor(known_ctor, arg_ty);
-            }
-        }
-        ty
-    } else {
-        ty
-    }
-}
-```
-
-Check `CtorVariableValue` in `compiler/rustc_infer/src/infer/unify_key.rs` for the exact enum variant names.
-
-### Gap 3: Writeback may need Ctor resolution
-
-The writeback pass (`compiler/rustc_hir_typeck/src/writeback.rs`) resolves all inference variables in the final types. It uses `fully_resolve` which walks types recursively. If it encounters `Ctor(Var(?v), T)` and doesn't know to resolve it via the ctor unification table, the final type will still be abstract.
-
-Search for `resolve_vars_if_possible` or `fully_resolve` in `rustc_hir_typeck/src/writeback.rs` and check if `ty::Ctor` is handled. It likely walks through it structurally via `TypeFoldable` but doesn't call `apply_ctor`. 
-
-The writeback folder in `rustc_infer` (`compiler/rustc_infer/src/infer/resolve.rs` or similar) handles `Infer` types — it likely also needs a `Ctor(Var(?v), T)` → `apply_ctor(Known(X), T)` case.
+**Diagnostic added** (not yet tested): eprintln in instantiate_binder_with_fresh_vars when Ctor case fires. Will confirm if this code path executes.
 
 ---
 
-## Recommended Order of Fixes
+## Feedback Loop Optimization
 
-1. **Add symmetric arm** — 5 lines, same file, likely makes our arm fire
-2. **Extend `shallow_resolve`** — needed so `Ctor(?v, T)` normalizes to `X<T>` when `?v` is solved
-3. **Check writeback** — verify final types are resolved correctly; may work via `shallow_resolve` propagation
+For next session, use:
+```bash
+# Check only changed crates (fastest feedback)
+cargo check -p rustc_type_ir -p rustc_infer 2>&1 | grep error
 
-After each step: `python x.py test tests/ui/type-constructors/examples/effects-system.rs`
+# Once clean, full build (3 min)
+python x.py build compiler/rustc_type_ir compiler/rustc_middle compiler/rustc_infer compiler/rustc_hir_typeck
+
+# Test output already captured; read directly (instant)
+cat build/x86_64-unknown-linux-gnu/test/ui/type-constructors/examples/effects-system/effects-system.err | head -50
+```
+
+Do NOT use `python x.py test` unless needed for full harness validation.
 
 ---
 
-## Key File Locations
+## Next Steps
 
-| File | Purpose |
-|------|---------|
-| `compiler/rustc_infer/src/infer/relate/type_relating.rs` | The `tys()` method where our new arm lives |
-| `compiler/rustc_infer/src/infer/mod.rs:1108` | `shallow_resolve` — needs Ctor extension |
-| `compiler/rustc_infer/src/infer/relate/generalize.rs:231` | `instantiate_ctor_var` — records `?v = Known(X)` |
-| `compiler/rustc_infer/src/infer/unify_key.rs` | `CtorVariableValue`, `CtorVidKey` |
-| `compiler/rustc_middle/src/ty/context/impl_interner.rs` | `apply_ctor`, `decompose_ctor_application` |
-| `compiler/rustc_type_ir/src/binder.rs:836` | `ctor_for_param` — fold machinery |
-| `tests/ui/type-constructors/examples/effects-system.rs` | The target test |
+1. **Verify BoundVariableKind::Ctor emission**: Rebuild + check if eprintln fires
+2. **If yes**: debug why fresh_args still has Known(identity::F)
+3. **If no**: trace how bound_vars are collected for function signatures; likely bound_vars() doesn't include ctor params
 
 ---
 
-## The Full Expected Flow (When Working)
+## Key Files Modified
 
-```
-identity(opt) where opt: Option<i32>
-
-1. Fresh vars: [Ctor(Var(?c)), TyVar(?a)] for [F, A]
-2. Instantiate sig: Ctor(Param(F), Param(A)) → ctor_for_param → Ctor(Var(?c), TyVar(?a))
-3. Argument check: relate(Option<i32>, Ctor(Var(?c), TyVar(?a)))
-   → symmetric arm fires
-   → decompose_ctor_application(Option<i32>) → (Known(Option), i32)
-   → ctor_args(Known(Option), Var(?c)) → instantiate_ctor_var(?c, Known(Option))
-   → relate(i32, TyVar(?a)) → ?a = i32
-4. shallow_resolve(Ctor(Var(?c), TyVar(?a)))
-   → ?c is solved → apply_ctor(Known(Option), i32) → Option<i32>
-5. Return type check: Option<i32> == Option<i32> ✓
-```
+| File | What | Line |
+|------|------|------|
+| `compiler/rustc_type_ir/src/binder.rs` | BoundCtorKind + BoundVariableKind::Ctor | 1116, 1134 |
+| `compiler/rustc_hir_analysis/src/collect/resolve_bound_vars.rs` | Emit Ctor for TypeCtor | 290, 309 |
+| `compiler/rustc_infer/src/infer/mod.rs` | next_ctor_var + instantiate handling | 828, 1410 |
+| `compiler/rustc_infer/src/infer/unify_key.rs` | Make CtorVariableOrigin pub | 179 |
+| `compiler/rustc_public/src/unstable/convert/stable/ty.rs` | Stable conversion stub | 326 |

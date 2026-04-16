@@ -223,14 +223,25 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for TypeRelating<'_, 'tcx> {
                 )?);
             }
 
-            // If the expected type is `Ctor(?var, arg)` and the actual type is a concrete
-            // 1-ary type application, decompose the concrete type and unify the ctor var.
+            // If one side is `Ctor(?var, arg)` and the other is a concrete 1-ary type,
+            // decompose the concrete side and unify the ctor var.
             // E.g. `Ctor(?F, ?A)` vs `Option<i32>` → solve `?F = Option`, `?A = i32`.
             (&ty::Ctor(ctor_arg, a_arg), _)
                 if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
             {
                 if let Some((b_ctor, b_arg)) = decompose_ctor_application_helper(infcx.tcx, b) {
                     self.ctor_args(ctor_arg, b_ctor)?;
+                    self.relate(a_arg, b_arg)?;
+                } else {
+                    super_combine_tys(infcx, self, a, b)?;
+                }
+            }
+
+            (_, &ty::Ctor(ctor_arg, b_arg))
+                if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
+            {
+                if let Some((a_ctor, a_arg)) = decompose_ctor_application_helper(infcx.tcx, a) {
+                    self.ctor_args(a_ctor, ctor_arg)?;
                     self.relate(a_arg, b_arg)?;
                 } else {
                     super_combine_tys(infcx, self, a, b)?;
