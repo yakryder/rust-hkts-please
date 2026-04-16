@@ -23,10 +23,11 @@ fn bind<F<_>, A, B>(x: F<A>, f: fn(A) -> F<B>) -> F<B> {
 }
 
 fn main() {
-    // This would work once Step 8 is fully done (needs unification of ?F ~ Result):
+    // Test with Option (1-ary constructor, matches F<_>):
+    let opt: Option<i32> = Some(42);
+    let _: Option<i32> = identity(opt);
+
+    // TODO: Result<T, E> (2-ary) requires partial application support (future work)
     // let r: Result<i32, String> = Ok(42);
     // let _: Result<i32, String> = identity(r);
-    //
-    // Currently: ctor_is_identity now correctly treats inference vars as abstract (no crash).
-    // Next: Need to solve constructor equations in relate module.
 }

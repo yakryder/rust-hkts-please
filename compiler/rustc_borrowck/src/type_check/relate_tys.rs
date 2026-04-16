@@ -10,6 +10,7 @@ use rustc_infer::traits::solve::Goal;
 use rustc_middle::mir::ConstraintCategory;
 use rustc_middle::traits::ObligationCause;
 use rustc_middle::traits::query::NoSolution;
+use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::relate::combine::{combine_ty_args, super_combine_consts, super_combine_tys};
 use rustc_middle::ty::relate::relate_args_invariantly;
 use rustc_middle::ty::{self, FnMutDelegate, Ty, TyCtxt, TypeVisitableExt};
@@ -540,6 +541,14 @@ impl<'b, 'tcx> TypeRelation<TyCtxt<'tcx>> for NllTypeRelating<'_, 'b, 'tcx> {
         }
 
         Ok(a)
+    }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
     }
 }
 

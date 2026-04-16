@@ -156,4 +156,13 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for VarianceExtractor<'_, 'tcx> {
         self.relate(a.skip_binder(), a.skip_binder())?;
         Ok(a)
     }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        assert_eq!(a, b);
+        Ok(())
+    }
 }

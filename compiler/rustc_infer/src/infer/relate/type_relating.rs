@@ -10,6 +10,7 @@ use crate::infer::BoundRegionConversionTime::HigherRankedType;
 use crate::infer::relate::{PredicateEmittingRelation, StructurallyRelateAliases};
 use crate::infer::{DefineOpaqueTypes, InferCtxt, SubregionOrigin, TypeTrace};
 use crate::traits::{Obligation, PredicateObligations};
+use rustc_middle::bug;
 
 /// Enforce that `a` is equal to or a subtype of `b`.
 pub(crate) struct TypeRelating<'infcx, 'tcx> {
@@ -259,6 +260,35 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for TypeRelating<'_, 'tcx> {
         b: ty::Const<'tcx>,
     ) -> RelateResult<'tcx, ty::Const<'tcx>> {
         super_combine_consts(self.infcx, self, a, b)
+    }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        use ty::CtorArgKind;
+
+        match (a.kind(), b.kind()) {
+            (CtorArgKind::Var(a_vid), CtorArgKind::Var(b_vid)) => {
+                // Both are inference variables - unify them
+                // The unify operation will merge them in the unification table
+                let _ = self.infcx.inner.borrow_mut().ctor_unification_table().unify_var_var(a_vid, b_vid);
+                Ok(())
+            }
+            (CtorArgKind::Var(vid), CtorArgKind::Known(_)) => {
+                // Left is inference var, right is concrete - instantiate
+                self.infcx.instantiate_ctor_var(self, true, vid, b)
+            }
+            (CtorArgKind::Known(_), CtorArgKind::Var(vid)) => {
+                // Left is concrete, right is inference var - instantiate
+                self.infcx.instantiate_ctor_var(self, false, vid, a)
+            }
+            (CtorArgKind::Known(a_ctor), CtorArgKind::Known(b_ctor)) => {
+                // Both concrete - check equality
+                if a_ctor == b_ctor { Ok(()) } else { bug!("ctor mismatch: {a_ctor:?} vs {b_ctor:?}") }
+            }
+        }
     }
 
     fn binders<T>(

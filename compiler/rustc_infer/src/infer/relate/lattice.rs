@@ -22,6 +22,7 @@ use rustc_middle::traits::solve::Goal;
 use rustc_middle::ty::relate::combine::{combine_ty_args, super_combine_consts, super_combine_tys};
 use rustc_middle::ty::relate::{Relate, RelateResult, TypeRelation};
 use rustc_middle::ty::{self, Ty, TyCtxt, TyVar, TypeVisitableExt};
+use rustc_middle::ty::error::TypeError;
 use rustc_span::Span;
 use tracing::{debug, instrument};
 
@@ -207,6 +208,15 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for LatticeOp<'_, 'tcx> {
         b: ty::Const<'tcx>,
     ) -> RelateResult<'tcx, ty::Const<'tcx>> {
         super_combine_consts(self.infcx, self, a, b)
+    }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        // For lattice operations, constructor arguments should match structurally
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
     }
 
     fn binders<T>(

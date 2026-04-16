@@ -118,6 +118,15 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for MatchAgainstFreshVars<'tcx> {
         relate::structurally_relate_consts(self, a, b)
     }
 
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        // For MatchAgainstFreshVars, we check structural equality
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
+    }
+
     fn binders<T>(
         &mut self,
         a: ty::Binder<'tcx, T>,

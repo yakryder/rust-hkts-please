@@ -227,7 +227,33 @@ impl<'tcx> InferCtxt<'tcx> {
     /// As `3 + 4` contains `N` in its args, this must not succeed.
     ///
     /// See `tests/ui/const-generics/occurs-check/` for more examples where this is relevant.
-    #[instrument(level = "debug", skip(self, relation))]
+    #[instrument(level = "debug", skip(self, _relation))]
+    pub(crate) fn instantiate_ctor_var<R: PredicateEmittingRelation<InferCtxt<'tcx>>>(
+        &self,
+        _relation: &mut R,
+        _target_is_expected: bool,
+        target_vid: ty::CtorVid,
+        source_ctor: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        use ty::CtorArgKind;
+        use crate::infer::CtorVariableValue;
+
+        // For constructor arguments, we can only unify with concrete constructors.
+        // If the source is also a variable, that should have been handled by equate() already.
+        match source_ctor.kind() {
+            CtorArgKind::Known(ctor_def) => {
+                // Unify the variable with the concrete constructor
+                let value = CtorVariableValue::Known { value: ctor_def };
+                self.inner.borrow_mut().ctor_unification_table().union_value(target_vid, value);
+                Ok(())
+            }
+            CtorArgKind::Var(_other_vid) => {
+                // This case should have been handled by equate_ctor_vids in relate_ctor_args
+                bug!("instantiate_ctor_var called with variable source: {source_ctor:?}")
+            }
+        }
+    }
+
     pub(crate) fn instantiate_const_var<R: PredicateEmittingRelation<InferCtxt<'tcx>>>(
         &self,
         relation: &mut R,
@@ -843,6 +869,16 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for Generalizer<'_, 'tcx> {
             }
             _ => relate::structurally_relate_consts(self, c, c),
         }
+    }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        // For generalization, both should be equal
+        assert_eq!(a, b); // we are misusing TypeRelation here; both LHS and RHS ought to be ==
+        Ok(())
     }
 
     #[instrument(level = "debug", skip(self), ret)]

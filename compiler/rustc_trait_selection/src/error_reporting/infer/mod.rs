@@ -2241,6 +2241,15 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for SameTypeModuloInfer<'_, 'tcx> {
         // relation
         Ok(a)
     }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> relate::RelateResult<'tcx, ()> {
+        // For SameTypeModuloInfer, we check structural equality
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
+    }
 }
 
 pub enum FailureCode {

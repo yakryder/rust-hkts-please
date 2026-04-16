@@ -213,6 +213,15 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for MatchAgainstHigherRankedOutlives<'tcx>
         }
     }
 
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        // For the test_type_match relation, we just check structural equality
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
+    }
+
     #[instrument(skip(self), level = "trace")]
     fn binders<T>(
         &mut self,

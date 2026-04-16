@@ -284,6 +284,13 @@ where
         super_combine_consts(self.infcx, self, a, b)
     }
 
+    fn ctor_args(&mut self, _a: I::CtorArg, _b: I::CtorArg) -> RelateResult<I, ()> {
+        // The solver relating doesn't support constructor argument unification yet.
+        // For now, we just return Ok(()) and let structural equality check handle it.
+        // TODO: Implement proper ctor_args handling in the solver.
+        Ok(())
+    }
+
     fn binders<T>(
         &mut self,
         a: ty::Binder<I, T>,

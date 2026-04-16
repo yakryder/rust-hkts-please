@@ -104,6 +104,8 @@ pub trait TypeRelation<I: Interner>: Sized {
 
     fn consts(&mut self, a: I::Const, b: I::Const) -> RelateResult<I, I::Const>;
 
+    fn ctor_args(&mut self, a: I::CtorArg, b: I::CtorArg) -> RelateResult<I, ()>;
+
     fn binders<T>(
         &mut self,
         a: ty::Binder<I, T>,

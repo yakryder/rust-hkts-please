@@ -11,6 +11,7 @@ use rustc_infer::infer::TyCtxtInferExt;
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
 use rustc_macros::Diagnostic;
 use rustc_middle::middle::resolve_bound_vars::ResolvedArg;
+use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::relate::{
     Relate, RelateResult, TypeRelation, relate_args_with_variances, structurally_relate_consts,
     structurally_relate_tys,
@@ -587,6 +588,15 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for FunctionalVariances<'tcx> {
     ) -> RelateResult<'tcx, ty::Const<'tcx>> {
         structurally_relate_consts(self, a, b).unwrap();
         Ok(a)
+    }
+
+    fn ctor_args(
+        &mut self,
+        a: ty::CtorArg<'tcx>,
+        b: ty::CtorArg<'tcx>,
+    ) -> RelateResult<'tcx, ()> {
+        // For FunctionalVariances, structural equality is fine
+        if a == b { Ok(()) } else { Err(TypeError::Mismatch) }
     }
 
     fn binders<T>(
