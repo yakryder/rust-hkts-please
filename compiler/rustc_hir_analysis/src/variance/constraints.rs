@@ -313,7 +313,11 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::Ctor(ctor, ty) => {
-                self.add_constraint(current, ctor.index, variance);
+                // Only add variance constraints for uninstantiated parameters.
+                // Once a constructor is instantiated (Var or Known), variance doesn't apply.
+                if let ty::CtorArgKind::Param(param_ctor) = ctor.kind() {
+                    self.add_constraint(current, param_ctor.index, variance);
+                }
                 self.add_constraints_from_ty(current, ty, variance);
             }
 

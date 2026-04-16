@@ -270,6 +270,11 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for TypeRelating<'_, 'tcx> {
         use ty::CtorArgKind;
 
         match (a.kind(), b.kind()) {
+            (CtorArgKind::Param(_), _) | (_, CtorArgKind::Param(_)) => {
+                // Uninstantiated parameters should have been replaced during substitution.
+                // If we see them in relating, something went wrong.
+                bug!("relate_ctor_args encountered uninstantiated parameter: {a:?} vs {b:?}")
+            }
             (CtorArgKind::Var(a_vid), CtorArgKind::Var(b_vid)) => {
                 // Both are inference variables - unify them
                 // The unify operation will merge them in the unification table

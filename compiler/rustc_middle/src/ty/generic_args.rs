@@ -353,8 +353,12 @@ impl<'a, 'tcx> Lift<TyCtxt<'tcx>> for GenericArg<'a> {
             GenericArgKind::Const(ct) => tcx.lift(ct).map(|ct| ct.into()),
             GenericArgKind::Ctor(ctor) => {
                 // Lift CtorArg: concrete ctors are lifted by lifting their args,
-                // but inference variables cannot be lifted (they're local to the current context).
+                // but inference variables and parameters cannot be lifted (they're context-dependent).
                 match ctor.kind() {
+                    ty::CtorArgKind::Param(_) => {
+                        // Parameters are context-dependent and cannot be lifted
+                        None
+                    }
                     ty::CtorArgKind::Known(ctor_def) => {
                         let lifted_args = tcx.lift(ctor_def.args)?;
                         Some(tcx.mk_ctor_arg(ty::CtorArgKind::Known(ty::CtorDef {

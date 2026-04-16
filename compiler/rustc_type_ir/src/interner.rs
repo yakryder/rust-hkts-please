@@ -141,8 +141,11 @@ pub trait Interner:
     /// If a ctor is an inference variable, return its vid. Otherwise return None.
     fn ctor_as_infer_var(self, ctor: Self::CtorArg) -> Option<ty::CtorVid>;
 
-    /// Construct a `Ctor(param, arg)` type.
-    fn mk_ty_ctor(self, param: Self::ParamCtor, arg: Self::Ty) -> Self::Ty;
+    /// If a ctor is an uninstantiated parameter, return the parameter. Otherwise return None.
+    fn ctor_arg_as_param(self, ctor: Self::CtorArg) -> Option<Self::ParamCtor>;
+
+    /// Construct a `Ctor(ctor_arg, arg)` type.
+    fn mk_ty_ctor(self, ctor_arg: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
     type Symbol: Symbol<Self>;
 
     // Things stored inside of tys

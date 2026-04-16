@@ -230,7 +230,7 @@ pub enum TyKind<I: Interner> {
     /// Application of a type constructor parameter to a type argument.
     /// Represents `F<A>` where `F` is declared as a type constructor parameter `F<_>`.
     /// For example, `F<A>` in `fn fmap<F<_>, A, B>(fa: F<A>, f: fn(A) -> B) -> F<B>`.
-    Ctor(I::ParamCtor, I::Ty),
+    Ctor(I::CtorArg, I::Ty),
 
     /// Bound type variable, used to represent the `'a` in `for<'a> fn(&'a ())`.
     ///

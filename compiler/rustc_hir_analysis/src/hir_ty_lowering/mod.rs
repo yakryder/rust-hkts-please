@@ -2357,9 +2357,10 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
         let [hir::GenericArg::Type(arg_ty)] = hir_args.args else {
             return None;
         };
-        let ctor = ty::ParamCtor::for_def(param_def);
+        let param_ctor = ty::ParamCtor::for_def(param_def);
+        let ctor_arg = tcx.mk_ctor_arg(ty::CtorArgKind::Param(param_ctor));
         let arg = self.lower_ty(arg_ty.as_unambig_ty());
-        Some(Ty::new_ctor(tcx, ctor, arg))
+        Some(Ty::new_ctor(tcx, ctor_arg, arg))
     }
 
     /// Lower a const parameter from the HIR to our internal notion of a constant.

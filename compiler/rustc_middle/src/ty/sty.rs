@@ -337,10 +337,13 @@ pub struct CtorDef<'tcx> {
     pub args: GenericArgsRef<'tcx>,
 }
 
-/// Either a concrete type constructor or an inference variable.
+/// A type constructor argument: a parameter, inference variable, or concrete constructor.
 /// Used as the value type in `GenericArgKind::Ctor`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable)]
 pub enum CtorArgKind<'tcx> {
+    /// A reference to a type constructor parameter (e.g., `F` in `fn<F<_>>`).
+    /// Used before the parameter is instantiated.
+    Param(ParamCtor),
     /// A concrete type constructor, e.g. `Option`, `Result<i32, _>`.
     Known(CtorDef<'tcx>),
     /// An inference variable for a type constructor.
@@ -379,14 +382,18 @@ impl<'a, 'tcx> rustc_data_structures::stable_hasher::HashStable<crate::ich::Stab
         hasher: &mut rustc_data_structures::stable_hasher::StableHasher,
     ) {
         match self.kind() {
-            CtorArgKind::Known(ctor_def) => {
+            CtorArgKind::Param(param_ctor) => {
                 0u8.hash_stable(hcx, hasher);
+                param_ctor.hash_stable(hcx, hasher);
+            }
+            CtorArgKind::Known(ctor_def) => {
+                1u8.hash_stable(hcx, hasher);
                 ctor_def.hash_stable(hcx, hasher);
             }
             CtorArgKind::Var(_) => {
                 // Inference variables can't be stably hashed, so just hash the discriminant.
                 // This is consistent with how Ty handles TyVid.
-                1u8.hash_stable(hcx, hasher);
+                2u8.hash_stable(hcx, hasher);
             }
         }
     }
@@ -518,7 +525,7 @@ impl<'tcx> Ty<'tcx> {
         Ty::new(tcx, Param(ParamTy { index, name }))
     }
 
-    pub fn new_ctor(tcx: TyCtxt<'tcx>, ctor: ParamCtor, arg: Ty<'tcx>) -> Ty<'tcx> {
+    pub fn new_ctor(tcx: TyCtxt<'tcx>, ctor: CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
         Ty::new(tcx, Ctor(ctor, arg))
     }
 
@@ -1192,7 +1199,7 @@ impl<'tcx> rustc_type_ir::inherent::Ty<TyCtxt<'tcx>> for Ty<'tcx> {
         Ty::new_unsafe_binder(interner, ty)
     }
 
-    fn new_ctor(interner: TyCtxt<'tcx>, ctor: ParamCtor, ty: Self) -> Self {
+    fn new_ctor(interner: TyCtxt<'tcx>, ctor: ty::CtorArg<'tcx>, ty: Self) -> Self {
         Ty::new_ctor(interner, ctor, ty)
     }
 

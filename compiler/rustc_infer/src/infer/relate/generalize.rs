@@ -239,8 +239,12 @@ impl<'tcx> InferCtxt<'tcx> {
         use crate::infer::CtorVariableValue;
 
         // For constructor arguments, we can only unify with concrete constructors.
-        // If the source is also a variable, that should have been handled by equate() already.
+        // If the source is also a variable or parameter, that should have been handled earlier.
         match source_ctor.kind() {
+            CtorArgKind::Param(_) => {
+                // Uninstantiated parameters shouldn't reach unification
+                bug!("instantiate_ctor_var called with uninstantiated parameter: {source_ctor:?}")
+            }
             CtorArgKind::Known(ctor_def) => {
                 // Unify the variable with the concrete constructor
                 let value = CtorVariableValue::Known { value: ctor_def };

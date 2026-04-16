@@ -87,6 +87,9 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
 
     fn apply_ctor(self, ctor: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
         match ctor.kind() {
+            ty::CtorArgKind::Param(_) => {
+                bug!("apply_ctor called on uninstantiated parameter CtorArg")
+            }
             ty::CtorArgKind::Known(ctor_def) => {
                 let all_args = self.mk_args_from_iter(
                     ctor_def.args.iter().chain(std::iter::once(arg.into())),
@@ -101,6 +104,7 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
 
     fn ctor_is_identity(self, ctor: ty::CtorArg<'tcx>) -> bool {
         match ctor.kind() {
+            ty::CtorArgKind::Param(_) => true,  // Uninstantiated params are identity
             ty::CtorArgKind::Known(ctor_def) => {
                 // A ctor is identity if its def_id points to a type parameter, not an ADT.
                 // We detect this by checking the DefKind: TypeParam means identity,
@@ -113,13 +117,22 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
 
     fn ctor_as_infer_var(self, ctor: ty::CtorArg<'tcx>) -> Option<ty::CtorVid> {
         match ctor.kind() {
+            ty::CtorArgKind::Param(_) => None,
             ty::CtorArgKind::Var(vid) => Some(vid),
             ty::CtorArgKind::Known(_) => None,
         }
     }
 
-    fn mk_ty_ctor(self, param: ty::ParamCtor, arg: Ty<'tcx>) -> Ty<'tcx> {
-        Ty::new_ctor(self, param, arg)
+    fn ctor_arg_as_param(self, ctor: ty::CtorArg<'tcx>) -> Option<ty::ParamCtor> {
+        match ctor.kind() {
+            ty::CtorArgKind::Param(param_ctor) => Some(param_ctor),
+            ty::CtorArgKind::Var(_) => None,
+            ty::CtorArgKind::Known(_) => None,
+        }
+    }
+
+    fn mk_ty_ctor(self, ctor_arg: ty::CtorArg<'tcx>, arg: Ty<'tcx>) -> Ty<'tcx> {
+        Ty::new_ctor(self, ctor_arg, arg)
     }
 
     type Symbol = Symbol;

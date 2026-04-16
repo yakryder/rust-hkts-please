@@ -785,7 +785,14 @@ pub trait PrettyPrinter<'tcx>: Printer<'tcx> + fmt::Write {
             ty::Error(_) => write!(self, "{{type error}}")?,
             ty::Param(ref param_ty) => param_ty.print(self)?,
             ty::Ctor(ctor, inner_ty) => {
-                write!(self, "{}", ctor.name)?;
+                match ctor.kind() {
+                    ty::CtorArgKind::Param(param_ctor) => write!(self, "{}", param_ctor.name)?,
+                    ty::CtorArgKind::Var(vid) => write!(self, "{:?}", vid)?,
+                    ty::CtorArgKind::Known(def) => {
+                        let name = self.tcx().def_path_str(def.def_id);
+                        write!(self, "{}", name)?;
+                    }
+                }
                 write!(self, "<")?;
                 inner_ty.print(self)?;
                 write!(self, ">")?;
@@ -3392,6 +3399,9 @@ define_print_and_forward_display! {
             GenericArgKind::Const(ct) => ct.print(p)?,
             GenericArgKind::Ctor(ctor) => {
                 match ctor.kind() {
+                    ty::CtorArgKind::Param(param_ctor) => {
+                        write!(p, "{}", param_ctor.name)?;
+                    }
                     ty::CtorArgKind::Known(ctor_def) => {
                         p.print_def_path(ctor_def.def_id, &[])?;
                     }

@@ -833,30 +833,37 @@ impl<'a, I: Interner> ArgFolder<'a, I> {
         )
     }
 
-    fn ctor_for_param(&mut self, ctor_param: I::ParamCtor, arg_ty: I::Ty) -> I::Ty {
-        let opt_ctor = self.args.get(ctor_param.index() as usize).map(|a| a.kind());
-        let ctor = match opt_ctor {
-            Some(ty::GenericArgKind::Ctor(ctor)) => ctor,
-            Some(other) => panic!(
-                "expected ctor for `{ctor_param:?}` (index {}) but found {other:?}",
-                ctor_param.index()
-            ),
-            None => panic!(
-                "ctor param `{ctor_param:?}` (index {}) out of range, args={:?}",
-                ctor_param.index(),
-                self.args
-            ),
-        };
+    fn ctor_for_param(&mut self, ctor_arg: I::CtorArg, arg_ty: I::Ty) -> I::Ty {
         let substituted_arg = arg_ty.fold_with(self);
+
+        // If this is an uninstantiated parameter, look it up in the current substitutions.
+        // This converts Param(ParamCtor) to the actual CtorArg being substituted.
+        let actual_ctor = if let Some(param_ctor) = self.cx.ctor_arg_as_param(ctor_arg) {
+            let opt_ctor = self.args.get(param_ctor.index() as usize).map(|a| a.kind());
+            match opt_ctor {
+                Some(ty::GenericArgKind::Ctor(ctor)) => ctor,
+                Some(other) => panic!(
+                    "expected ctor for `{param_ctor:?}` (index {}) but found {other:?}",
+                    param_ctor.index()
+                ),
+                None => panic!(
+                    "ctor param `{param_ctor:?}` (index {}) out of range, args={:?}",
+                    param_ctor.index(),
+                    self.args
+                ),
+            }
+        } else {
+            ctor_arg
+        };
 
         // Check if this is an identity ctor (the param hasn't been substituted yet).
         // Identity ctors should not be applied; instead reconstruct the Ctor type.
-        if self.cx.ctor_is_identity(ctor) {
-            return self.cx.mk_ty_ctor(ctor_param, substituted_arg);
+        if self.cx.ctor_is_identity(actual_ctor) {
+            return self.cx.mk_ty_ctor(actual_ctor, substituted_arg);
         }
 
         // Otherwise, this is a concrete constructor — apply it
-        self.cx.apply_ctor(ctor, substituted_arg)
+        self.cx.apply_ctor(actual_ctor, substituted_arg)
     }
 
     #[cold]

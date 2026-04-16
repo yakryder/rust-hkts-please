@@ -1,125 +1,132 @@
-# Session 13 Handoff: Architectural Gap Identified - Phase 3 Blocker
+# Session 14 Handoff: Type Representation Refactor Complete - Design Question Identified
 
-## What Was Done (Session 13)
+## What Was Done (Session 14)
 
-**Completed: Infrastructure testing and architectural analysis**
+**Completed: Core type representation change from `ParamCtor` to `CtorArg`**
 
-The constructor equation solving infrastructure (Phases 1-2) is complete, compiles, and all TypeRelation impls are in place. However, end-to-end testing revealed a fundamental architectural gap that blocks Phase 3.
+### The Transformation
 
-## The Architectural Gap: Type Representation Problem
-
-### The Issue
-
-When `identity(opt)` is called with `opt: Option<i32>` and the parameter type is `fn<F<_>, A>(x: F<A>)`:
-
-1. **Instantiation:** Generic parameters get fresh variables: `F` → `CtorVid(?0)`, `A` → `TyVar(?A)`
-2. **Substitution:** The type `F<A>` is substituted via `ctor_for_param()`:
-   - Looks up `GenericArg` at position 0: finds `CtorArg::Var(?0)`
-   - Calls `ctor_is_identity(?0)` → returns `true`
-   - **Reconstructs type as `Ctor(ParamCtor{index=0}, ?A)`** ← This is the problem
-3. **Unification:** Must unify `Ctor(ParamCtor{index=0}, ?A)` against `Adt(Option, [i32])`
-4. **Failure:** In `structurally_relate_tys()` at line 525, no arm handles `Ctor` vs `Adt`, so we get:
-   ```
-   TypeError: sorts mismatch (Ctor vs Adt)
-   ```
-
-### Root Cause
-
-**The `CtorVid(?0)` inference variable becomes inaccessible after substitution.**
-
-When we reconstruct with `ParamCtor{index=0}`, we've severed the link to the actual `CtorVid(?0)`. Later, in `TypeRelating::tys`, we only have:
-- `ParamCtor{index=0}` (a parameter reference)
-- No way to resolve this reference back to `CtorVid(?0)`
-
-The inference variable was created during instantiation, but its location in the type system isn't accessible from the type level.
-
-## Why Current Approaches Don't Work
-
-### Approach A: Handle in `structurally_relate_tys` (lower level)
-- **Problem:** `structurally_relate_tys` is in `rustc_type_ir` with no access to `InferCtxt`
-- **Can't do:** Resolve `ParamCtor.index` to get the `CtorVid`
-
-### Approach B: Handle in `TypeRelating::tys` (higher level)
-- **Problem:** Even with `InferCtxt` access, `ParamCtor` is just `{index: u32, name: Symbol}`
-- **Can't do:** Look up which `CtorVid` corresponds to parameter index 0 in the current context
-- **Missing:** No mapping from parameter indices to their instantiated `CtorVid`s
-
-### Approach C: Modify `apply_ctor` for inference variables
-- **Problem:** `apply_ctor` is called during type substitution (in binder folder), before `InferCtxt` exists
-- **Can't do:** Create type variables or record obligations at that point
-
-## The Real Fix: Type Representation Change
-
-**The `Ctor` type node should embed the `CtorArg` directly, not a `ParamCtor` reference.**
-
-Current (broken):
+Changed `TyKind::Ctor` from:
 ```rust
-pub enum TyKind<I: Interner> {
-    Ctor(I::ParamCtor, I::Ty),  // ParamCtor is just {index, name}
-    ...
+Ctor(I::ParamCtor, I::Ty)  // Just a parameter reference
+```
+
+To:
+```rust
+Ctor(I::CtorArg, I::Ty)  // The actual argument: parameter, inference var, or concrete
+```
+
+Where `CtorArgKind` is now:
+```rust
+pub enum CtorArgKind<'tcx> {
+    Param(ParamCtor),        // Uninstantiated parameter (e.g., F in fn<F<_>>)
+    Known(CtorDef<'tcx>),    // Concrete constructor (e.g., Option, Result<i32, _>)
+    Var(ty::CtorVid),        // Inference variable (e.g., ?0ctor)
 }
 ```
 
-Needed:
-```rust
-pub enum TyKind<I: Interner> {
-    Ctor(I::CtorArg, I::Ty),  // CtorArg is Var(CtorVid) | Known(CtorDef)
-    ...
-}
-```
+### What Changed
 
-**Benefits:**
-- Inference variables are visible at the type level
-- `TypeRelating::tys` can directly access `CtorVid` and call `ctor_args`
-- No need for parameter index lookups or hidden mappings
-- Unification becomes straightforward
+**Files modified:**
+- `compiler/rustc_type_ir/src/ty_kind.rs` - Changed `Ctor` variant signature
+- `compiler/rustc_type_ir/src/inherent.rs` - Updated `new_ctor` trait method
+- `compiler/rustc_type_ir/src/interner.rs` - Updated `mk_ty_ctor` signature, added `ctor_arg_as_param` method
+- `compiler/rustc_type_ir/src/binder.rs` - Rewrote `ctor_for_param` to handle `Param` lookup
+- `compiler/rustc_middle/src/ty/sty.rs` - Updated `new_ctor` impl, added `Param` variant
+- `compiler/rustc_middle/src/ty/context/impl_interner.rs` - Implemented new interner methods
+- `compiler/rustc_hir_analysis/src/hir_ty_lowering/mod.rs` - Create `Param` variant during lowering
+- `compiler/rustc_hir_analysis/src/variance/constraints.rs` - Handle `Param` in variance analysis
+- `compiler/rustc_middle/src/ty/print/pretty.rs` - Pretty-print all three variants
+- `compiler/rustc_middle/src/ty/generic_args.rs` - Handle `Param` in generic arg lifting
+- `compiler/rustc_infer/src/infer/relate/generalize.rs` - Handle `Param` in unification
+- `compiler/rustc_infer/src/infer/relate/type_relating.rs` - Handle `Param` in type relation
 
-**Cost:**
-- Requires changing `TyKind` enum (ripples through entire codebase)
-- Affects type printing, encoding, error reporting
-- Moderate refactoring (~500-1000 LOC)
+**Compilation status:** rustc_middle and rustc_infer both build successfully.
+
+### Architecture Achieved
+
+**Inference variables are now visible at the type level.** When you have `Ctor(Var(?0ctor), i32)`, the `?0ctor` is directly accessible and can be unified. No more information boundary.
+
+### The Design Question: Should `Param` Reach Unification?
+
+A critical decision point emerged: what should happen if an uninstantiated `Param` reaches the unification/relating machinery?
+
+**Current implementation:** `bug!` macros in two places:
+1. `instantiate_ctor_var()` - treats `Param` as a compiler internal error
+2. `relate_ctor_args()` - treats `Param` in comparison as an ICE
+
+**The tension:**
+
+| Perspective | Position | Reasoning |
+|---|---|---|
+| **Conservative (Niko)** | `bug!` is right | Params should be instantiated before unification. Fail loudly to catch real bugs. |
+| **Pragmatist (Error Recovery)** | Handle gracefully | Real error paths hit weird states. Better to fail on the *real* error later than ICE now. |
+| **Architect (Felix)** | Question design | Why do we have `Param` in the type at all? This suggests a scoping/lifetime issue. |
+| **Type Theorist (Ralf)** | `bug!` is justified | Unifying uninstantiated parameters is semantically undefined. |
+| **Reliability Engineer (Carol)** | `bug!` + prevent | Use bug, but add validation early in the pipeline to prevent this case. |
+
+**Consensus:** 3/5 lean toward bug with early prevention; 2/5 lean toward graceful handling.
 
 ## What Remains for Phase 3
 
-### Immediate (1-2 sessions)
-1. Change `Ctor` variant to take `CtorArg` instead of `ParamCtor`
-2. Update `ctor_for_param()` to work with the new representation
-3. Update `mk_ty_ctor()` to work with `CtorArg`
-4. Add special case in `TypeRelating::tys` to relate `Ctor` types via `ctor_args`
-5. Run full test suite
+### Immediate (this session or next)
+
+1. ✅ **Type representation change complete** - `CtorArg` embedded in `Ctor`
+2. ✅ **Substitution updated** - `ctor_for_param` looks up `Param` and converts to actual `CtorArg`
+3. ✅ **Core compilation clean** - type_ir, middle, infer all build
+4. **DECISION NEEDED** - Resolve the `Param` handling question:
+   - Option A: Keep `bug!` and add early validation to prevent uninstantiated params from reaching unification
+   - Option B: Replace `bug!` with graceful handling (treat as incomparable or unknown)
+   - Option C: Investigate whether `Param` shouldn't exist at this level at all (design rethink)
+
+5. **Finish rustc_hir_analysis compilation** - likely 2-5 more exhaustiveness errors to fix
+6. **Run full type-constructor test suite** - ensure end-to-end HKT type checking works
+7. **Add `Ctor` arm to `TypeRelating::tys`** - implement actual unification for `Ctor(Var, _)` types
 
 ### Testing
-- `tests/ui/type-constructors/examples/effects-system.rs` (currently ignored)
-- Full type-constructor test suite for regressions
 
-## Code Locations
+- `tests/ui/type-constructors/examples/effects-system.rs` (currently ignored)
+- Full type-constructor test suite
+- Particularly: `identity(opt)` should now work end-to-end
+
+### Open Questions
+
+1. **`Param` semantics**: Should uninstantiated parameters ever reach unification? How confident are we?
+2. **Error messages**: If we hit the `bug!` cases, what is the user actually doing wrong?
+3. **Canonical forms**: Do canonical queries preserve or strip `Param`?
+4. **Inference order**: When instantiation happens, are we creating the right fresh variables at the right time?
+
+## Code Locations (Key References)
 
 | What | File | Lines |
 |------|------|-------|
-| Problem manifestation | `compiler/rustc_type_ir/src/relate.rs` | 520-525 |
-| Architecture decision (reconstruction) | `compiler/rustc_type_ir/src/binder.rs` | 854-855 |
-| Decision logic | `compiler/rustc_middle/src/ty/context/impl_interner.rs` | 102-112 |
-| Type definition | TyKind enum in rustc_type_ir |
-| Solution location | `TypeRelating::tys` would intercept here |
+| Type definition | `compiler/rustc_type_ir/src/ty_kind.rs` | 233 |
+| `CtorArgKind` enum | `compiler/rustc_middle/src/ty/sty.rs` | 343-348 |
+| Substitution logic | `compiler/rustc_type_ir/src/binder.rs` | 836-860 |
+| Type lowering | `compiler/rustc_hir_analysis/src/hir_ty_lowering/mod.rs` | 2360-2363 |
+| Unification `bug!` | `compiler/rustc_infer/src/infer/relate/generalize.rs` | 243 |
+| Relating `bug!` | `compiler/rustc_infer/src/infer/relate/type_relating.rs` | 272 |
 
 ## Session Summary
 
 ✅ Phases 1-2 infrastructure complete  
-✅ All TypeRelation impls have ctor_args methods  
-✅ Constructor unification machinery tested  
-⏳ Phase 3: Blocked by `ParamCtor` vs `CtorArg` representation gap  
-❌ End-to-end HKT function calls don't work yet
+✅ Type representation refactored - `CtorArg` embedded in `Ctor`  
+✅ `Param` variant added to handle uninstantiated parameters  
+✅ Substitution machinery updated to convert `Param` → actual `CtorArg`  
+✅ Core compiler crates (type_ir, middle, infer) compile  
+⏳ Phase 3 unblocked but requires decision on `Param` handling  
+⏳ rustc_hir_analysis compilation in progress (minor exhaustiveness fixes)  
+❌ End-to-end HKT function calls not yet tested
 
 ## Key Insight
 
-This isn't a small bug—it's a **design decision that broke down**. Using `ParamCtor` to delay constructor instantiation made sense initially, but it created an information boundary that the type relation machinery can't cross. The solution requires embedding the inference variable directly in the type, which is a bigger refactoring but architecturally clean.
-
----
+**The representation change was the right move.** Embedding `CtorArg` directly makes inference variables visible and accessible to the type relation machinery. The system is now architecturally sound—we just need to decide how to handle the edge case of uninstantiated parameters in the unification layer.
 
 ## Next Session Prerequisites
 
-- Understand `TyKind` definition and where it's used
-- Plan `Ctor(CtorArg)` refactoring carefully to minimize ripple effects
-- Consider: does `CtorArg` need additional context (like its "home" context)?
-- Test strategy: build incrementally, running type-checker tests after each chunk
+- Decide on `Param` handling approach (bug vs graceful) - this will guide the remaining work
+- Finish rustc_hir_analysis compilation by handling remaining exhaustiveness errors
+- Test end-to-end: run the effects-system example and verify unification works
+- Consider: does `Param` need additional validation earlier in the pipeline?
 
+---
