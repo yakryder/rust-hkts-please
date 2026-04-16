@@ -12,6 +12,26 @@ use crate::infer::{DefineOpaqueTypes, InferCtxt, SubregionOrigin, TypeTrace};
 use crate::traits::{Obligation, PredicateObligations};
 use rustc_middle::bug;
 
+/// If `ctor_arg` is a constructor inference variable, return its vid.
+#[allow(rustc::usage_of_type_ir_traits)]
+fn ctor_as_infer_var_helper<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    ctor_arg: ty::CtorArg<'tcx>,
+) -> Option<ty::CtorVid> {
+    use rustc_type_ir::Interner as _;
+    tcx.ctor_as_infer_var(ctor_arg)
+}
+
+/// Decompose a concrete 1-ary type application into `(ctor, arg)`.
+#[allow(rustc::usage_of_type_ir_traits)]
+fn decompose_ctor_application_helper<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    ty: Ty<'tcx>,
+) -> Option<(ty::CtorArg<'tcx>, Ty<'tcx>)> {
+    use rustc_type_ir::Interner as _;
+    tcx.decompose_ctor_application(ty)
+}
+
 /// Enforce that `a` is equal to or a subtype of `b`.
 pub(crate) struct TypeRelating<'infcx, 'tcx> {
     infcx: &'infcx InferCtxt<'tcx>,
@@ -201,6 +221,20 @@ impl<'tcx> TypeRelation<TyCtxt<'tcx>> for TypeRelating<'_, 'tcx> {
                     self.trace.cause.span,
                     self.param_env(),
                 )?);
+            }
+
+            // If the expected type is `Ctor(?var, arg)` and the actual type is a concrete
+            // 1-ary type application, decompose the concrete type and unify the ctor var.
+            // E.g. `Ctor(?F, ?A)` vs `Option<i32>` → solve `?F = Option`, `?A = i32`.
+            (&ty::Ctor(ctor_arg, a_arg), _)
+                if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
+            {
+                if let Some((b_ctor, b_arg)) = decompose_ctor_application_helper(infcx.tcx, b) {
+                    self.ctor_args(ctor_arg, b_ctor)?;
+                    self.relate(a_arg, b_arg)?;
+                } else {
+                    super_combine_tys(infcx, self, a, b)?;
+                }
             }
 
             _ => {

@@ -149,6 +149,11 @@ pub trait Interner:
 
     /// Construct a `Ctor(ctor_arg, arg)` type.
     fn mk_ty_ctor(self, ctor_arg: Self::CtorArg, arg: Self::Ty) -> Self::Ty;
+
+    /// Decompose a concrete type into a 1-ary constructor application `(ctor, arg)`, if possible.
+    /// E.g. `Option<i32>` → `Some((Known(Option), i32))`.
+    /// Returns `None` if the type is not a 1-ary constructor application.
+    fn decompose_ctor_application(self, ty: Self::Ty) -> Option<(Self::CtorArg, Self::Ty)>;
     type Symbol: Symbol<Self>;
 
     // Things stored inside of tys

@@ -139,6 +139,22 @@ impl<'tcx> Interner for TyCtxt<'tcx> {
         Ty::new_ctor(self, ctor_arg, arg)
     }
 
+    fn decompose_ctor_application(
+        self,
+        ty: Ty<'tcx>,
+    ) -> Option<(ty::CtorArg<'tcx>, Ty<'tcx>)> {
+        if let ty::Adt(adt_def, args) = ty.kind()
+            && args.len() == 1
+            && let ty::GenericArgKind::Type(arg_ty) = args[0].kind()
+        {
+            let ctor_def = ty::CtorDef { def_id: adt_def.did(), args: self.mk_args(&[]) };
+            let ctor_arg = self.mk_ctor_arg(ty::CtorArgKind::Known(ctor_def));
+            Some((ctor_arg, arg_ty))
+        } else {
+            None
+        }
+    }
+
     type Symbol = Symbol;
 
     type ErrorGuaranteed = ErrorGuaranteed;

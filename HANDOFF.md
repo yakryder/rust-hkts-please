@@ -1,178 +1,132 @@
-# Session 17 Handoff: Flags Bug Found, Core Mystery Remains
+# Session 18 Handoff: Path B Implemented, Three Gaps Remain
 
-## What Was Discovered
+## What Was Done This Session
 
-**A critical flags bug was found and fixed, but the core problem persists.**
+**Established Path B as the correct architectural approach:**
+- Rejected adding `(Ctor, Adt)` unification to `structurally_relate_tys` (wrong level)
+- Chose: decompose `Option<i32>` → `Ctor(Known(Option), i32)` *before* relating, so both sides are `Ctor` and the existing `ctor_args(Var, Known)` machinery fires
 
-### The Bug (FIXED)
+**Implemented:**
+1. `decompose_ctor_application` on `Interner` trait (`compiler/rustc_type_ir/src/interner.rs`)
+2. Implementation for 1-ary ADTs (`compiler/rustc_middle/src/ty/context/impl_interner.rs`):
+   - `Option<i32>` → `Some((Known(CtorDef { def_id: Option, args: [] }), i32))`
+   - Only handles `args.len() == 1` for now (covers Option, Vec, Box)
+3. New match arm in `type_relating.rs::tys()` (`compiler/rustc_infer/src/infer/relate/type_relating.rs:229`):
+   ```rust
+   (&ty::Ctor(ctor_arg, a_arg), _)
+       if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
+   {
+       if let Some((b_ctor, b_arg)) = decompose_ctor_application_helper(infcx.tcx, b) {
+           self.ctor_args(ctor_arg, b_ctor)?;
+           self.relate(a_arg, b_arg)?;
+       } else {
+           super_combine_tys(infcx, self, a, b)?;
+       }
+   }
+   ```
+   With helpers at lines ~15-35 using `#[allow(rustc::usage_of_type_ir_traits)]`.
 
-In `compiler/rustc_type_ir/src/flags.rs` line 254-257:
+**Compiles clean. Test still fails with same error.**
+
+---
+
+## Why The Test Still Fails: Three Gaps
+
+### Gap 1: Symmetric arm missing (most likely cause of arm not firing)
+
+The current arm matches `(Ctor(?v, _), _)` — i.e., when `a` is the `Ctor` type. But when checking `identity(opt)`, rustc may pass `a = Option<i32>` (actual) and `b = Ctor(?v, ?A)` (expected param type). Need the mirror:
 
 ```rust
-ty::Ctor(_, ty) => {
-    self.add_flags(TypeFlags::HAS_TY_PARAM);  // ❌ WRONG: unconditional
-    self.add_ty(ty);
-}
-```
-
-This **unconditionally** marks every `Ctor` type as having parameters, even concrete ones like `Ctor(Known(Option), i32)`.
-
-**Why this matters:** The fold machinery checks `has_param()` before recursing. If a concrete `Ctor` is falsely marked as having params, the fold mechanism may not work correctly.
-
-**Fix applied:**
-- Added method `ctor_arg_is_param()` to Interner trait
-- Modified flags computation to only set `HAS_TY_PARAM` if the ctor_arg is actually a `Param`
-- Concrete `Ctor(Known(...), A)` no longer marked as having params
-
----
-
-## The Remaining Mystery: Fold Isn't Being Called (or Isn't Solving)
-
-**Test still fails identically.** Error:
-```
-expected `identity::F<_>`, found `Option<i32>`
-```
-
-This is still the abstract constructor type. The fix was necessary but not sufficient.
-
-### Where We Got Stuck
-
-The fold machinery should work like this:
-
-```
-User code: fn<F<_>>(x: F<A>) → F<A>
-    ↓ (lowering)
-Signature stored: (x: Ctor(Param(F), A)) → Ctor(Param(F), A)
-    ↓ (instantiate with fresh args for F, A)
-Args created: [?CtorVar, i32]  (constructor inference variable for F)
-    ↓ (fold signature with args)
-ArgFolder::fold_ty() on Ctor(Param(F), A):
-  1. Lookup Param(F) in args → get ?CtorVar
-  2. Check if ?CtorVar is solved → NO (still unknown)
-  3. Return Ctor(?CtorVar, i32)  (still abstract!)
-    ↓ (argument type checking)
-Unify: Ctor(?CtorVar, i32) ⊑ Option<i32>  (FAILS - different type kinds)
-```
-
-**The core problem:** Constructor inference variables (`?CtorVar`) are never unified with the concrete constructor from the argument.
-
-### Why Unification Never Happens
-
-The Session 15 HANDOFF claimed unification machinery was complete, but **there's no hook to trigger it**. When should `?CtorVar` be unified with `Option`?
-
-1. **During argument checking?** We need code that:
-   - Sees `Ctor(?CtorVar, A)` (parameter type)
-   - Sees `Option<A>` (argument type)
-   - Extracts `Option` as the constructor
-   - Unifies `?CtorVar := Known(Option)`
-
-2. **Or before fold?** Should we solve constructor variables *before* attempting fold?
-
-Neither path is implemented. The fold machinery exists, the unification machinery exists, but they're not connected.
-
----
-
-## What Actually Happened in Session 17
-
-1. ✅ Diagnosed that `has_param()` was being called on `Ctor` types
-2. ✅ Found the root cause: unconditional flag setting
-3. ✅ Fixed the flags computation
-4. ❌ But fold still doesn't solve the constructor parameter
-5. ❌ Still no unification between inference variable and concrete constructor
-
-The test still fails because **fold is either not being called, or it's being called on types that don't have the constructor parameter yet**.
-
----
-
-## Next Session: Immediate Debugging Steps
-
-**Start here.** Add debug output to answer these questions:
-
-### Question 1: Is fold_ty even being called on Ctor types?
-
-In `compiler/rustc_type_ir/src/binder.rs` `fold_ty()`:
-
-```rust
-fn fold_ty(&mut self, t: I::Ty) -> I::Ty {
-    if !t.has_param() {
-        return t;
-    }
-
-    match t.kind() {
-        ty::Param(p) => {
-            eprintln!("FOLD: Param({:?})", p);
-            self.ty_for_param(p, t)
-        }
-        ty::Ctor(ctor_param, arg_ty) => {
-            eprintln!("FOLD: Ctor found! ctor_param={:?}, arg_ty={:?}", ctor_param, arg_ty);
-            self.ctor_for_param(ctor_param, arg_ty)
-        }
-        _ => {
-            eprintln!("FOLD: Other: {:?}", t.kind());
-            t.super_fold_with(self)
-        }
+(_, &ty::Ctor(ctor_arg, b_arg))
+    if ctor_as_infer_var_helper(infcx.tcx, ctor_arg).is_some() =>
+{
+    if let Some((a_ctor, a_arg)) = decompose_ctor_application_helper(infcx.tcx, a) {
+        self.ctor_args(a_ctor, ctor_arg)?;
+        self.relate(a_arg, b_arg)?;
+    } else {
+        super_combine_tys(infcx, self, a, b)?;
     }
 }
 ```
 
-**Expected output for `identity(opt)`:** At least one `FOLD: Ctor found!` line.
-**Actual:** (Need to check - may be zero)
+**File:** `compiler/rustc_infer/src/infer/relate/type_relating.rs` — add immediately after the existing `(&ty::Ctor(...), _)` arm (around line 238).
 
-### Question 2: If fold_ty IS called on Ctor, what's the actual_ctor value?
+### Gap 2: `shallow_resolve` does not resolve Ctor types
 
-In `ctor_for_param()` method, before checking `ctor_is_identity`:
+`InferCtxt::shallow_resolve` (`compiler/rustc_infer/src/infer/mod.rs:1108`) only resolves `ty::Infer(TyVar(...))`. A `Ctor(Var(?v), i32)` type is NOT a `ty::Infer` — it's a `ty::Ctor`. So even after `?v = Known(Option)` is recorded in the ctor unification table, `shallow_resolve(Ctor(Var(?v), i32))` returns `Ctor(Var(?v), i32)` unchanged.
 
-```rust
-eprintln!("CTOR_FOR_PARAM: ctor_arg={:?}, actual_ctor={:?}", ctor_arg, actual_ctor);
-eprintln!("CTOR_FOR_PARAM: is_identity={}, has_param={}", 
-    self.cx.ctor_is_identity(actual_ctor),
-    ctor_arg_is_param);
-```
-
-**Expected:** `actual_ctor = Var(...)` (unresolved inference variable)
-**If so:** This confirms constructors are never solved before fold
-
-### Question 3: Is the function signature even lowered with Ctor types?
-
-Check what `tcx.type_of(identity_def_id)` returns. Add output in `instantiate_value_path`:
+**Fix needed:** Extend `shallow_resolve` to handle `ty::Ctor`:
 
 ```rust
-let ty = tcx.type_of(def_id);
-eprintln!("DEBUG: type_of({:?}) = {:?}", def_id, ty.skip_binder());
+// In InferCtxt::shallow_resolve, after the existing ty::Infer match:
+pub fn shallow_resolve(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+    if let ty::Infer(v) = *ty.kind() {
+        // ... existing TyVar/IntVar/FloatVar handling ...
+    } else if let ty::Ctor(ctor_arg, arg_ty) = *ty.kind() {
+        // If ctor arg is a solved inference variable, apply it
+        if let ty::CtorArgKind::Var(vid) = ctor_arg.kind() {
+            let value = self.inner.borrow_mut().ctor_unification_table().probe_value(vid);
+            if let crate::infer::CtorVariableValue::Known { value: ctor_def } = value {
+                let known_ctor = self.tcx.mk_ctor_arg(ty::CtorArgKind::Known(ctor_def));
+                return self.tcx.apply_ctor(known_ctor, arg_ty);
+            }
+        }
+        ty
+    } else {
+        ty
+    }
+}
 ```
 
-**Expected:** Should show `Ctor(Param(...), ...)` in the signature
-**If it shows:** Regular `FnSig` without Ctor types → lowering is broken or signatures are being normalized
+Check `CtorVariableValue` in `compiler/rustc_infer/src/infer/unify_key.rs` for the exact enum variant names.
+
+### Gap 3: Writeback may need Ctor resolution
+
+The writeback pass (`compiler/rustc_hir_typeck/src/writeback.rs`) resolves all inference variables in the final types. It uses `fully_resolve` which walks types recursively. If it encounters `Ctor(Var(?v), T)` and doesn't know to resolve it via the ctor unification table, the final type will still be abstract.
+
+Search for `resolve_vars_if_possible` or `fully_resolve` in `rustc_hir_typeck/src/writeback.rs` and check if `ty::Ctor` is handled. It likely walks through it structurally via `TypeFoldable` but doesn't call `apply_ctor`. 
+
+The writeback folder in `rustc_infer` (`compiler/rustc_infer/src/infer/resolve.rs` or similar) handles `Infer` types — it likely also needs a `Ctor(Var(?v), T)` → `apply_ctor(Known(X), T)` case.
 
 ---
 
-## Critical Insight for Future Sessions
+## Recommended Order of Fixes
 
-**The fold machinery cannot solve constructor inference variables.** Fold does substitution, not unification. For fold to work, the constructor variable must already be solved.
+1. **Add symmetric arm** — 5 lines, same file, likely makes our arm fire
+2. **Extend `shallow_resolve`** — needed so `Ctor(?v, T)` normalizes to `X<T>` when `?v` is solved
+3. **Check writeback** — verify final types are resolved correctly; may work via `shallow_resolve` propagation
 
-So either:
-1. **Solve constructors first**, then fold (requires new code)
-2. **Fold + solve together** in one pass (requires changing fold architecture)
-3. **Constructor variables must be converted to Param during lowering**, not Var (different approach entirely)
-
-The HANDOFF assumption that "fold will just work" was optimistic. The actual problem is **architectural**: the unification of constructors needs to happen *somewhere*, and that somewhere doesn't exist yet.
+After each step: `python x.py test tests/ui/type-constructors/examples/effects-system.rs`
 
 ---
 
-## Files Modified This Session
+## Key File Locations
 
-1. `compiler/rustc_type_ir/src/flags.rs` - Fixed unconditional HAS_TY_PARAM
-2. `compiler/rustc_type_ir/src/interner.rs` - Added `ctor_arg_is_param()` method
-3. `compiler/rustc_middle/src/ty/context/impl_interner.rs` - Implemented `ctor_arg_is_param()`
+| File | Purpose |
+|------|---------|
+| `compiler/rustc_infer/src/infer/relate/type_relating.rs` | The `tys()` method where our new arm lives |
+| `compiler/rustc_infer/src/infer/mod.rs:1108` | `shallow_resolve` — needs Ctor extension |
+| `compiler/rustc_infer/src/infer/relate/generalize.rs:231` | `instantiate_ctor_var` — records `?v = Known(X)` |
+| `compiler/rustc_infer/src/infer/unify_key.rs` | `CtorVariableValue`, `CtorVidKey` |
+| `compiler/rustc_middle/src/ty/context/impl_interner.rs` | `apply_ctor`, `decompose_ctor_application` |
+| `compiler/rustc_type_ir/src/binder.rs:836` | `ctor_for_param` — fold machinery |
+| `tests/ui/type-constructors/examples/effects-system.rs` | The target test |
 
 ---
 
-## Next Session's Real Work
+## The Full Expected Flow (When Working)
 
-Once you've answered Question 1-3 above with debug output, you'll know exactly where the gap is. Then:
+```
+identity(opt) where opt: Option<i32>
 
-- If fold isn't being called: find where it should be and add the call
-- If actual_ctor is always Var: implement constructor unification in argument checking
-- If signatures lack Ctor types: fix the lowering pipeline
-
-The test case is the spec. It should compile without errors.
+1. Fresh vars: [Ctor(Var(?c)), TyVar(?a)] for [F, A]
+2. Instantiate sig: Ctor(Param(F), Param(A)) → ctor_for_param → Ctor(Var(?c), TyVar(?a))
+3. Argument check: relate(Option<i32>, Ctor(Var(?c), TyVar(?a)))
+   → symmetric arm fires
+   → decompose_ctor_application(Option<i32>) → (Known(Option), i32)
+   → ctor_args(Known(Option), Var(?c)) → instantiate_ctor_var(?c, Known(Option))
+   → relate(i32, TyVar(?a)) → ?a = i32
+4. shallow_resolve(Ctor(Var(?c), TyVar(?a)))
+   → ?c is solved → apply_ctor(Known(Option), i32) → Option<i32>
+5. Return type check: Option<i32> == Option<i32> ✓
+```
