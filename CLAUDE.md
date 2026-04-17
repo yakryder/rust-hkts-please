@@ -141,3 +141,88 @@ fn helper<'tcx>(tcx: TyCtxt<'tcx>, ...) {
     tcx.method(...)
 }
 ```
+
+---
+
+## Validation Strategy
+
+### Test Layers (ordered by what they catch)
+
+| Layer | Test Pattern | Catches |
+|-------|-------------|---------|
+| **Parse** | `tests/ui/type-constructors/parse/` | Syntax errors in `F<_>` |
+| **Gate** | `tests/ui/type-constructors/gate/` | Feature gate enforcement |
+| **Inference** | `//@ check-pass` + explicit return type annotation | Wrong/missing inference (silent failures) |
+| **Rejection** | `//~ ERROR` on mismatched lines | Missing constraint enforcement |
+
+### Falsifiable Ctor Var Tests
+
+**A. Fresh var creation** (current blocker):
+```rust
+//@ check-pass
+fn identity<F<_>, A>(x: F<A>) -> F<A> { x }
+fn main() { let _: Option<i32> = identity(Some(42)); }
+```
+Fails with `expected Option<i32>, found F<_>` if Var(?c) never created.
+
+**B. Substitution (fold replaces Param with Var)**:
+```rust
+//@ check-pass
+fn apply_twice<F<_>, A>(x: F<A>, y: F<A>) -> F<A> { x }
+fn main() { let _: Option<i32> = apply_twice(Some(1), Some(2)); }
+```
+Fails if the two F<A> positions don't share the same ctor var.
+
+**C. Ctor conflict rejection**:
+```rust
+fn identity<F<_>, A>(x: F<A>) -> F<A> { x }
+fn main() { let _: Vec<i32> = identity(Some(42)); } //~ ERROR mismatched types
+```
+If this passes, unification is not constraining ctor vars.
+
+**D. Distinct ctor params**:
+```rust
+//@ check-pass
+fn pair<F<_>, G<_>, A>(x: F<A>, y: G<A>) -> F<A> { x }
+fn main() { let _: Option<i32> = pair(Some(1), vec![2]); }
+```
+
+### Debugging (instead of eprintln!)
+
+**Tracing** (preferred): Use `tracing::debug!` with `?` formatting:
+```rust
+use tracing::debug;
+debug!(?fresh_args, ?def_id, "fresh_args_for_item");
+```
+Run with: `RUSTC_LOG=rustc_infer::infer=debug ./build/.../stage1/bin/rustc test.rs 2>&1 | grep fresh_args`
+
+**Targeted filter examples**:
+```bash
+RUSTC_LOG=rustc_infer::infer=debug,rustc_hir_typeck=debug
+RUSTC_LOG=rustc_hir_analysis::hir_ty_lowering=debug
+```
+
+**Invariant enforcement** (loudness hierarchy):
+1. `span_bug!(span, "msg")` -- ICE with backtrace. For impossible states.
+2. `debug_assert!(cond, "msg")` -- Panics in debug builds. For invariants.
+3. `//~ ERROR` in tests -- CI catches regressions. For expected errors.
+4. `//@ check-pass` -- CI catches regressions. For must-compile cases.
+5. `tracing::debug!` -- Silent unless RUSTC_LOG set. For flow tracing.
+
+**Rule**: Never use `eprintln!` in compiler code. It bypasses tracing filters and will be rejected by CI. Use `debug!()` or `span_bug!()` instead.
+
+### Blessing stderr Files
+
+To capture current (broken) error output as a baseline:
+```bash
+python x.py test tests/ui/type-constructors/examples/effects-system.rs --bless
+```
+This creates/updates the `.stderr` file. When the fix lands, the test either passes (`.stderr` deleted) or produces a different error (`.stderr` mismatch = test failure). Both are informative.
+
+### Anti-pattern: "Wrong But Passes"
+
+The most dangerous failure mode is silent wrong inference. Guard against it by:
+1. Always annotate expected return types: `let _: Option<i32> = ...` not `let _ = ...`
+2. Test rejection (mismatched ctors must error)
+3. Test that distinct ctor params stay distinct
+4. Never write `//@ check-pass` without at least one explicit type annotation that would break under wrong inference

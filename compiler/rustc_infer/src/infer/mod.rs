@@ -909,6 +909,7 @@ impl<'tcx> InferCtxt<'tcx> {
     }
 
     pub fn var_for_def(&self, span: Span, param: &ty::GenericParamDef) -> GenericArg<'tcx> {
+        debug!(?param.name, ?param.kind, "var_for_def");
         match param.kind {
             GenericParamDefKind::Lifetime => {
                 // Create a region inference variable for the given
@@ -954,7 +955,9 @@ impl<'tcx> InferCtxt<'tcx> {
                     .ctor_unification_table()
                     .new_key(CtorVariableValue::Unknown { origin, universe: self.universe() })
                     .vid;
-                self.tcx.mk_ctor_var_arg(ctor_var_id).into()
+                let arg = self.tcx.mk_ctor_var_arg(ctor_var_id).into();
+                debug!(?param.name, ?arg, "var_for_def: created fresh ctor var");
+                arg
             }
         }
     }
@@ -962,7 +965,9 @@ impl<'tcx> InferCtxt<'tcx> {
     /// Given a set of generics defined on a type or impl, returns the generic parameters mapping
     /// each type/region parameter to a fresh inference variable.
     pub fn fresh_args_for_item(&self, span: Span, def_id: DefId) -> GenericArgsRef<'tcx> {
-        GenericArgs::for_item(self.tcx, def_id, |param, _| self.var_for_def(span, param))
+        let args = GenericArgs::for_item(self.tcx, def_id, |param, _| self.var_for_def(span, param));
+        debug!(?def_id, ?args, "fresh_args_for_item");
+        args
     }
 
     /// Returns `true` if errors have been reported since this infcx was

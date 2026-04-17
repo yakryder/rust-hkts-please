@@ -1,4 +1,35 @@
-# Session 21 Handoff
+# Session 22 Handoff
+
+## Status: Blocker Isolated — Fresh Vars Not Being Created
+
+**Observed failure**: Running test A (`identity(Some(42): Option<i32>)`) shows:
+```
+ctor_for_param: ctor=CtorArg(Param(F/#0))
+  -> args=[CtorArg(Known(CtorDef { def_id: identity::F }))]  ← WRONG: should be Var(?c)
+```
+
+Fresh args contain `Known(identity::F)` instead of fresh `Var(?c)` — means `var_for_def` for TypeCtor is not being called.
+
+### Code Changes Applied
+- ✓ ty/context.rs:2342-2345: Changed identity_args to create `Param(F)` instead of `Known(identity::F)`
+- ✓ generics.rs:271-281: Added match arm for TypeCtor params with mismatched user args
+- ✓ generics.rs:382-387: Existing match arm should handle `(None, Some(&TypeCtor))` 
+- ✓ mod.rs:947-960: `var_for_def` has full TypeCtor implementation
+- ✓ mod.rs:912-918: Added tracing debug output to `var_for_def` and `fresh_args_for_item`
+- ✓ CLAUDE.md: Updated with BDD validation strategy & tracing guidance
+
+### Hypothesis
+`lower_generic_args` reaches `(None, Some(&param))` case (line 382) which calls `ctx.inferred_kind`, but `inferred_kind` (line 1318 of _impl.rs) → `fcx.var_for_def` is never executing the TypeCtor branch, OR the fresh args are created but not propagated to fold.
+
+### Investigation Next
+1. Add `#[instrument]` to `inferred_kind` to trace execution
+2. Verify `(None, Some(&TypeCtor))` case is reached
+3. Check if args created by `fresh_args_for_item` are actually used in `ty.instantiate(tcx, args)`
+4. Use `RUSTC_LOG` with proper build flags (or run minimal repro test)
+
+---
+
+# Session 21 Handoff (Original)
 
 ## Discovery
 

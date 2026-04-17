@@ -2337,11 +2337,11 @@ impl<'tcx> TyCtxt<'tcx> {
                     .into()
             }
             GenericParamDefKind::TypeCtor => {
-                // Identity arg: F maps to the CtorArgKind::Known for F's own DefId,
-                // with no captured args (it's a param, not a partial application).
-                self.mk_ctor_arg(ty::CtorArgKind::Known(ty::CtorDef {
-                    def_id: param.def_id,
-                    args: self.mk_args(&[]),
+                // TypeCtor params are like Type/Const params: represented as Param in the signature,
+                // then instantiated with fresh Var during type checking.
+                self.mk_ctor_arg(ty::CtorArgKind::Param(ty::ParamCtor {
+                    index: param.index,
+                    name: param.name,
                 })).into()
             }
         }
