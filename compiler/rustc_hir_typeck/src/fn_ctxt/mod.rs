@@ -265,6 +265,14 @@ impl<'tcx> HirTyLowerer<'tcx> for FnCtxt<'_, 'tcx> {
         }
     }
 
+    fn ctor_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> ty::CtorArg<'tcx> {
+        // FIXME ideally this shouldn't use unwrap
+        match param {
+            Some(param) => self.var_for_def(span, param).as_ctor().unwrap(),
+            None => self.next_ctor_var(span),
+        }
+    }
+
     fn register_trait_ascription_bounds(
         &self,
         bounds: Vec<(ty::Clause<'tcx>, Span)>,

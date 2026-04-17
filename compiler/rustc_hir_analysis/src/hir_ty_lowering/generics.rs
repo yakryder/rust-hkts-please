@@ -270,6 +270,17 @@ pub fn lower_generic_args<'tcx: 'a, 'a>(
                         }
                         (
                             GenericArg::Infer(_) | GenericArg::Type(_) | GenericArg::Const(_),
+                            GenericParamDefKind::TypeCtor,
+                            _,
+                        ) => {
+                            // We expected a type constructor argument, but got a type or const
+                            // argument. Infer the ctor param and consume the mismatched arg.
+                            args.push(ctx.inferred_kind(&args, param, infer_args));
+                            args_iter.next();
+                            params.next();
+                        }
+                        (
+                            GenericArg::Infer(_) | GenericArg::Type(_) | GenericArg::Const(_),
                             GenericParamDefKind::Lifetime,
                             _,
                         ) => {

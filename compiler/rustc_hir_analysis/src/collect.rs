@@ -351,6 +351,12 @@ impl<'tcx> HirTyLowerer<'tcx> for ItemCtxt<'tcx> {
         ty::Const::new_error_with_message(self.tcx(), span, "bad placeholder constant")
     }
 
+    fn ctor_infer(&self, _: Option<&ty::GenericParamDef>, span: Span) -> ty::CtorArg<'tcx> {
+        // This should not be called during collection. Type constructor inference
+        // only happens during type checking when we have an InferCtxt.
+        span_bug!(span, "ctor_infer should not be called during type collection")
+    }
+
     fn register_trait_ascription_bounds(
         &self,
         _: Vec<(ty::Clause<'tcx>, Span)>,

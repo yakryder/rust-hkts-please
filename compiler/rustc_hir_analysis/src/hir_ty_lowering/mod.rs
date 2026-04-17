@@ -140,6 +140,9 @@ pub trait HirTyLowerer<'tcx> {
     /// Returns the const to use when a const is omitted.
     fn ct_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> Const<'tcx>;
 
+    /// Returns the ctor arg to use when a type constructor is omitted.
+    fn ctor_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> ty::CtorArg<'tcx>;
+
     fn register_trait_ascription_bounds(
         &self,
         bounds: Vec<(ty::Clause<'tcx>, Span)>,
@@ -769,7 +772,12 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                         }
                     }
                     GenericParamDefKind::TypeCtor => {
-                        bug!("STEP 8: cannot fill generic arg for TypeCtor param `{}`; needs GenericArgKind::Ctor", param.name)
+                        if infer_args {
+                            self.lowerer.ctor_infer(Some(param), self.span).into()
+                        } else {
+                            // We've already errored above about the mismatch.
+                            param.to_error(tcx)
+                        }
                     }
                     GenericParamDefKind::Const { has_default, .. } => {
                         let ty = tcx
