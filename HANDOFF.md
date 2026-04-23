@@ -1,126 +1,72 @@
-# Session 23 Handoff
+# Session 25 Handoff
 
-## Status: Infrastructure Complete — Late-Bound Ctor Params Representation Fixed
+## Discovery: Control Flow Broken for Ctor Param Lowering
 
-**Breakthrough**: Root cause of fresh var blocker identified and fixed. Function signatures were storing early-bound `Param(F)` for ALL ctor params, regardless of whether they were early or late-bound in the signature. Late-bound params need special representation.
+**Status**: Fresh ctor vars still not being created. Root cause identified but not yet fixed.
 
-### Root Cause
-`try_lower_ctor_param_use` was creating `CtorArgKind::Param(param_ctor)` without checking `named_bound_var`. This meant:
-- Function signature stored: `Ctor(Param(F), A)` with DefId baked in
-- When `fresh_args_for_item` called `var_for_def`, there was no way to know F should be replaced with a fresh Var
-- Result: args contained `Known(identity::F)` instead of `Var(?c)`
+### The Problem
 
-### Code Changes Applied (Session 23)
-- ✓ **rustc_type_ir/src/binder.rs**: Added `BoundCtor` struct (var + kind), matching BoundTy/BoundConst pattern
-- ✓ **rustc_middle/src/ty/sty.rs**: Added `Bound` variant to `CtorArgKind` enum
-- ✓ **rustc_middle/src/ty/sty.rs**: Added `BoundCtor<'tcx>` type alias
-- ✓ **rustc_hir_analysis/src/hir_ty_lowering/mod.rs**: Updated `try_lower_ctor_param_use` to check `named_bound_var` and create `Bound(BoundCtor)` for late-bound params
-- ✓ **rustc_infer/src/infer/relate/type_relating.rs**: Added `Bound` to bug cases (should be instantiated before unification)
-- ✓ **rustc_infer/src/infer/relate/generalize.rs**: Added `Bound` to bug cases
-- ✓ **rustc_middle/src/ty/generic_args.rs**: Added `Bound` to Lift impl (context-dependent, cannot lift)
-- ✓ **rustc_middle/src/ty/context/impl_interner.rs**: Updated all ctor helper methods (ctor_is_identity, ctor_as_infer_var, etc.) to handle `Bound`
-- ✓ **rustc_middle/src/ty/print/pretty.rs**: Added `Bound` printing for Ty and GenericArg
-
-### Architecture Now Correct
-- Early-bound ctor params → stored as `Param(F)` in signature
-- Late-bound ctor params → stored as `Bound(BoundCtor {var, kind: Param(F)})` in signature
-- When signature instantiated: Bound vars converted to fresh `Var(?c)` by `instantiate_binder_with_fresh_vars`
-- When folding: BoundCtor replaced via ArgFolder just like BoundTy
-
-### Build Status
-✓ Full build succeeds: `compiler/rustc_type_ir`, `rustc_middle`, `rustc_infer` compile cleanly
-
-### Next Blocker
-Test still fails. Fresh var still not being created. Probable causes:
-1. `instantiate_binder_with_fresh_vars` needs to be updated to handle `BoundVariableKind::Ctor` 
-2. ArgFolder's `ctor_for_param` may not be correctly handling the new Bound representation
-3. Need to trace: does `instantiate_binder_with_fresh_vars` get called with the bound vars?
-
----
-
-# Session 21 Handoff (Original)
-
-## Discovery
-
-**Root cause identified**: TypeCtor params lack a match arm in the generic args lowering pipeline.
-
-### The Bug
-
-In `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs:253`, the inner match statement that handles generic argument lowering has arms for:
-- Lifetime params
-- Type params  
-- Const params
-
-**Missing**: TypeCtor params
-
-When `lower_generic_args` encounters a TypeCtor parameter (e.g., `F` in `fn<F<_>, A>`), it falls through to the error case (line 289) instead of calling `ctx.inferred_kind()` to create a fresh ctor var.
-
-### Why This Matters
-
-The flow for function calls is:
-1. `instantiate_value_path` → `lower_generic_args` → match on param.kind
-2. For Type/Const with no user args → calls `inferred_kind` → calls `var_for_def` → creates fresh var
-3. For TypeCtor with no user args → **no match arm** → falls through → error path
-
-This prevents `var_for_def(TypeCtor)` from being called, so fresh ctor vars are never created. The args array ends up with the signature's Param ctors instead of fresh Vars.
-
----
-
-## The Fix (Ready to Apply)
-
-Add a match arm in `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs` after line 263:
-
-```rust
-(
-    GenericArg::Infer(_) | GenericArg::Type(_) | GenericArg::Const(_),
-    GenericParamDefKind::TypeCtor,
-    _,
-) => {
-    // TypeCtor param with mismatched user arg: infer the ctor param
-    args.push(ctx.inferred_kind(&args, param, infer_args));
-    args_iter.next();
-    params.next();
-}
+Test still fails with:
+```
+expected `identity::F<_>`, found `Option<i32>`
 ```
 
-This matches the pattern for other param kinds: when the user provides something that doesn't match, or nothing at all, we call `inferred_kind` to create the appropriate fresh variable.
+Fresh args contain `Known(CtorDef { def_id: identity::F, ... })` instead of `Var(?c)`.
 
----
+### Root Cause Analysis
 
-## Expected Result
+The `Known(CtorDef)` with param's own def_id is created by error recovery in `GenericParamDef::to_error()` (rustc_middle/src/ty/generics.rs:108). This happens when `extend_with_error()` is called to fill missing ctor args in fresh args.
 
-After this fix:
-1. `lower_generic_args` will call `ctx.inferred_kind()` for TypeCtor params
-2. `inferred_kind` calls `fcx.var_for_def(span, param)`
-3. `var_for_def` hits the `GenericParamDefKind::TypeCtor` case (line 947 in mod.rs)
-4. Creates fresh ctor var via `self.tcx.mk_ctor_var_arg(ctor_var_id)`
-5. Fresh args contain `Var(?c)` instead of `Known(identity::F)`
-6. Test should pass: `Option<i32>` argument unifies correctly with fresh `?c<i32>`
+**Why are ctor args missing?**
+- `instantiate_binder_with_fresh_vars` creates fresh vars for late-bound variables
+- If ctor params are early-bound (stored as `Param(F)` not `Bound(BoundCtor)`), no fresh ctor var is created
+- When extending args, ctor param slot is missing, triggering error recovery
 
----
+**Why are ctor params early-bound?**
+- `try_lower_ctor_param_use` is supposed to create `Ctor(Bound(BoundCtor), arg_ty)` types during signature lowering
+- But this function is **never being called** (verified: no output when added eprintln)
+- Either the function doesn't detect it should handle ctor params, or parameter types aren't going through that code path
 
-## Files Modified
+### Control Flow Investigation
 
-| File | Change | Impact |
-|------|--------|--------|
-| `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs` | Add TypeCtor match arm (after line 263) | Enables fresh ctor var creation |
+Traced function signature lowering:
+1. `fn_sig` query (collect.rs:970) → calls `lower_fn_sig_recovering_infer_ret_ty`
+2. → calls `icx.lowerer().lower_fn_ty(...)`
+3. → calls `lower_fn_sig(...)` (line 3544)
+4. → impl in collect.rs:528 iterates over `decl.inputs` and calls `self.lowerer().lower_ty(a)` for each
 
-## Next Steps
+**Added eprintln to confirm:**
+- `HirTyLowerer::lower_ty` (line 3039) — **NOT CALLED** (0 times)
+- `lower_resolved_ty_path` (line 2175) — **NOT CALLED**  
+- `Res::Def(DefKind::TyParam, ...)` path — **NOT CALLED**
+- `try_lower_ctor_param_use` — **NOT CALLED**
 
-1. Apply the match arm addition
-2. Run quick check: `cargo check -p rustc_hir_analysis`
-3. Full build: `python x.py build compiler/rustc_hir_analysis compiler/rustc_type_ir compiler/rustc_infer`
-4. Test: `python x.py test tests/ui/type-constructors/examples/effects-system.rs`
-5. Commit as: `WIP: Session 21 - Add TypeCtor match arm to lower_generic_args`
+**Conclusion**: Signature parameter types are **not** being lowered through the normal `lower_ty` pipeline during signature collection.
 
----
+### Hypothesis
 
-## Key Insight
+Either:
+1. Signature types are NOT lowered at collection time (just stored as HIR), lowering happens later during type-checking
+2. There's a different lowering path for function signatures that bypasses `lower_ty`
+3. The `ItemCtxt::lower_ty` (collect.rs:246) that delegates to `self.lowerer().lower_ty()` is somehow not actually calling the trait method
 
-The compiler infrastructure for HKTs is **structurally complete**:
-- BoundVariableKind::Ctor exists ✓
-- fresh_args_for_item creates Var(?c) for TypeCtor ✓
-- var_for_def handles TypeCtor correctly ✓
-- ctor_for_param folds signatures correctly ✓
+### Next Steps
 
-The bug was a **single missing match arm** preventing the generic lowering pipeline from routing TypeCtor params to the inference machinery. This is a pattern completion issue, not a design gap.
+1. **Verify when signature types are lowered**: Add eprintln to `collect.rs:552` (where `self.lowerer().lower_ty(a)` is called) to confirm if signature lowering is even being executed
+2. **Check type-checking phase**: Signatures might be lowered during type-checking (`rustc_hir_typeck`), not collection
+3. **Trace the actual impl**: Determine which `lower_ty` method is actually being called by the `self.lowerer().lower_ty()` delegatio chain
+
+### Files Modified (Session 25)
+
+- `compiler/rustc_hir_analysis/src/hir_ty_lowering/mod.rs`: 
+  - Fixed `try_lower_ctor_param_use` signature to accept `hir_id` parameter
+  - Changed from `last_seg.hir_id` back to correct HIR ID source
+  - Added diagnostic output (now removed)
+
+### Key Insight
+
+The Session 24 infrastructure (bound ctor instantiation in `instantiate_binder_with_fresh_vars`) is correct. The blocker is **not** in fresh var creation — it's in whether ctor params ever reach the code that marks them as bound in the first place.
+
+If `try_lower_ctor_param_use` is never called, ctor params are never converted to `Ctor` types with bound/param ctor args. They stay as regular `Param(F)` types. Then when fresh args are created, there's nothing to instantiate, and error recovery creates dummy `Known(CtorDef)` values.
+
+The fix is to ensure ctor param application syntax (`F<A>`) goes through `try_lower_ctor_param_use` during signature lowering.

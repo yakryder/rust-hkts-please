@@ -2231,8 +2231,8 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                 self.lower_path_segment(span, def_id, &path.segments[index])
             }
             Res::Def(DefKind::TyParam, def_id) => {
-                assert_eq!(opt_self_ty, None);
-                if let Some(ty) = self.try_lower_ctor_param_use(def_id, path) {
+                        assert_eq!(opt_self_ty, None);
+                if let Some(ty) = self.try_lower_ctor_param_use(def_id, path, hir_id) {
                     return ty;
                 }
                 let _ = self.prohibit_generic_args(
@@ -2352,6 +2352,7 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
         &self,
         def_id: DefId,
         path: &hir::Path<'tcx>,
+        hir_id: HirId,
     ) -> Option<Ty<'tcx>> {
         let tcx = self.tcx();
         let parent_def_id = tcx.parent(def_id);
@@ -2365,14 +2366,12 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
         let [hir::GenericArg::Type(arg_ty)] = hir_args.args else {
             return None;
         };
-
         // Check if this is a late-bound ctor parameter (like early/late-bound type params)
-        let path_hir_id = last_seg.hir_id;
-        let ctor_arg = match tcx.named_bound_var(path_hir_id) {
-            Some(rbv::ResolvedArg::LateBound(_debruijn, index, decl_def_id)) => {
+        let ctor_arg = match tcx.named_bound_var(hir_id) {
+            Some(rbv::ResolvedArg::LateBound(_debruijn, index, _decl_def_id)) => {
                 let br = ty::BoundCtor {
                     var: ty::BoundVar::from_u32(index),
-                    kind: ty::BoundCtorKind::Param(decl_def_id.to_def_id()),
+                    kind: ty::BoundCtorKind::Param(def_id),
                 };
                 tcx.mk_ctor_arg(ty::CtorArgKind::Bound(br))
             }
@@ -2384,7 +2383,7 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                 return Some(Ty::new_error(tcx, guar));
             }
             arg => {
-                bug!("unexpected bound var resolution for {:?}: {arg:?}", path_hir_id)
+                bug!("unexpected bound var resolution for {:?}: {arg:?}", hir_id)
             }
         };
 
