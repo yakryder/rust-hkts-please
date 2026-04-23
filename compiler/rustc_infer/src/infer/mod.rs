@@ -1412,8 +1412,9 @@ impl<'tcx> InferCtxt<'tcx> {
                 }
                 ty::BoundVariableKind::Const => self.next_const_var(span).into(),
                 ty::BoundVariableKind::Ctor(_) => {
-                    eprintln!("instantiate_binder_with_fresh_vars: creating fresh ctor var");
-                    self.next_ctor_var(span).into()
+                    let fresh_ctor = self.next_ctor_var(span);
+                    debug!(?fresh_ctor, "instantiate_binder_with_fresh_vars: created fresh ctor var");
+                    fresh_ctor.into()
                 }
             };
             args.push(arg);
@@ -1432,6 +1433,9 @@ impl<'tcx> InferCtxt<'tcx> {
             }
             fn replace_const(&mut self, bc: ty::BoundConst<'tcx>) -> ty::Const<'tcx> {
                 self.args[bc.var.index()].expect_const()
+            }
+            fn replace_ctor(&mut self, bc: rustc_type_ir::BoundCtor<TyCtxt<'tcx>>) -> rustc_middle::ty::CtorArg<'tcx> {
+                self.args[bc.var.index()].expect_ctor()
             }
         }
         let delegate = ToFreshVars { args };

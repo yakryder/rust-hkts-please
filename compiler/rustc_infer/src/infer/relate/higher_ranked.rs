@@ -45,6 +45,9 @@ impl<'tcx> InferCtxt<'tcx> {
                     ty::PlaceholderConst::new(next_universe, bound_const),
                 )
             },
+            ctors: &mut |bound_ctor| {
+                self.tcx.mk_ctor_arg(ty::CtorArgKind::Bound(bound_ctor))
+            },
         };
 
         debug!(?next_universe);

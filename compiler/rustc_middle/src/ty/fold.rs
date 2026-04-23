@@ -1,9 +1,10 @@
 use rustc_data_structures::fx::FxIndexMap;
 use rustc_hir::def_id::DefId;
 use rustc_type_ir::data_structures::DelayedMap;
+use rustc_type_ir as ir;
 
 use crate::ty::{
-    self, Binder, BoundTy, Ty, TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable,
+    self, Binder, BoundTy, CtorArg, Ty, TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable,
     TypeVisitableExt,
 };
 
@@ -61,15 +62,17 @@ pub trait BoundVarReplacerDelegate<'tcx> {
     fn replace_region(&mut self, br: ty::BoundRegion<'tcx>) -> ty::Region<'tcx>;
     fn replace_ty(&mut self, bt: ty::BoundTy<'tcx>) -> Ty<'tcx>;
     fn replace_const(&mut self, bc: ty::BoundConst<'tcx>) -> ty::Const<'tcx>;
+    fn replace_ctor(&mut self, bc: ir::BoundCtor<TyCtxt<'tcx>>) -> CtorArg<'tcx>;
 }
 
-/// A simple delegate taking 3 mutable functions. The used functions must
+/// A simple delegate taking 4 mutable functions. The used functions must
 /// always return the same result for each bound variable, no matter how
 /// frequently they are called.
 pub struct FnMutDelegate<'a, 'tcx> {
     pub regions: &'a mut (dyn FnMut(ty::BoundRegion<'tcx>) -> ty::Region<'tcx> + 'a),
     pub types: &'a mut (dyn FnMut(ty::BoundTy<'tcx>) -> Ty<'tcx> + 'a),
     pub consts: &'a mut (dyn FnMut(ty::BoundConst<'tcx>) -> ty::Const<'tcx> + 'a),
+    pub ctors: &'a mut (dyn FnMut(ir::BoundCtor<TyCtxt<'tcx>>) -> CtorArg<'tcx> + 'a),
 }
 
 impl<'a, 'tcx> BoundVarReplacerDelegate<'tcx> for FnMutDelegate<'a, 'tcx> {
@@ -81,6 +84,9 @@ impl<'a, 'tcx> BoundVarReplacerDelegate<'tcx> for FnMutDelegate<'a, 'tcx> {
     }
     fn replace_const(&mut self, bc: ty::BoundConst<'tcx>) -> ty::Const<'tcx> {
         (self.consts)(bc)
+    }
+    fn replace_ctor(&mut self, bc: ir::BoundCtor<TyCtxt<'tcx>>) -> CtorArg<'tcx> {
+        (self.ctors)(bc)
     }
 }
 
@@ -236,6 +242,7 @@ impl<'tcx> TyCtxt<'tcx> {
                 regions: &mut replace_regions,
                 types: &mut |b| bug!("unexpected bound ty in binder: {b:?}"),
                 consts: &mut |b| bug!("unexpected bound ct in binder: {b:?}"),
+                ctors: &mut |b| bug!("unexpected bound ctor in binder: {b:?}"),
             };
             let mut replacer = BoundVarReplacer::new(self, delegate);
             value.fold_with(&mut replacer)
@@ -310,6 +317,12 @@ impl<'tcx> TyCtxt<'tcx> {
                 consts: &mut |c| {
                     ty::Const::new_bound(self, ty::INNERMOST, ty::BoundConst::new(shift_bv(c.var)))
                 },
+                ctors: &mut |c: ir::BoundCtor<TyCtxt<'tcx>>| {
+                    self.mk_ctor_arg(ty::CtorArgKind::Bound(ir::BoundCtor {
+                        var: shift_bv(c.var),
+                        kind: c.kind,
+                    }))
+                },
             },
         )
     }
@@ -358,6 +371,16 @@ impl<'tcx> TyCtxt<'tcx> {
                 let var = ty::BoundVar::from_usize(index);
                 let () = entry.or_insert_with(|| ty::BoundVariableKind::Const).expect_const();
                 ty::Const::new_bound(self.tcx, ty::INNERMOST, ty::BoundConst::new(var))
+            }
+            fn replace_ctor(&mut self, bc: ir::BoundCtor<TyCtxt<'tcx>>) -> CtorArg<'tcx> {
+                let entry = self.map.entry(bc.var);
+                let index = entry.index();
+                let var = ty::BoundVar::from_usize(index);
+                let kind = entry
+                    .or_insert_with(|| ty::BoundVariableKind::Ctor(ty::BoundCtorKind::Anon))
+                    .expect_ctor();
+                let new_ctor = ir::BoundCtor { var, kind };
+                self.tcx.mk_ctor_arg(ty::CtorArgKind::Bound(new_ctor))
             }
         }
 
