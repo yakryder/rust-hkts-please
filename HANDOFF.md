@@ -1,72 +1,93 @@
-# Session 25 Handoff
+# Session 26 Handoff
 
-## Discovery: Control Flow Broken for Ctor Param Lowering
+## Discovery: Generic Arg Lowering Doesn't Create Fresh Ctor Vars
 
-**Status**: Fresh ctor vars still not being created. Root cause identified but not yet fixed.
+**Status**: Identified the exact code path where fresh ctor vars should be created, but they're not being created. Root cause still narrowing down.
 
-### The Problem
+### The Blocker
 
-Test still fails with:
+Test still fails with `expected Option<i32>, found identity::F<_>`. Fresh args contain `Known(CtorDef { def_id: identity::F })` instead of `Var(?c)`.
+
+### What We Know
+
+**The code path for generic arg instantiation:**
+1. `check_expr_call` (callee.rs:65) type-checks the function call
+2. `check_expr_path` (expr.rs:555) type-checks the callee path (e.g., `identity`)
+3. `instantiate_value_path` (fn_ctxt/_impl.rs:968) creates fresh args for the function's generics
+4. Calls `probe_generic_path_segments` to identify which items have generics
+5. Calls `lower_generic_args` with a callback `inferred_kind`
+6. `inferred_kind` (line 1302) should call `self.fcx.var_for_def(self.span, param)` for each param
+
+**The var_for_def implementation exists** (mod.rs:948-961):
+```rust
+GenericParamDefKind::TypeCtor => {
+    let ctor_var_id = self.inner.borrow_mut()
+        .ctor_unification_table()
+        .new_key(CtorVariableValue::Unknown { ... })
+        .vid;
+    let arg = self.tcx.mk_ctor_var_arg(ctor_var_id).into();
+    debug!(?param.name, ?arg, "var_for_def: created fresh ctor var");
+    arg
+}
 ```
-expected `identity::F<_>`, found `Option<i32>`
+
+**BUT**: The debug log "var_for_def: created fresh ctor var" **never appears** in compiler output. This means `var_for_def` is never called.
+
+### Why var_for_def Isn't Called
+
+Three hypotheses:
+
+**1. `probe_generic_path_segments` doesn't identify the function as having generics**
+   - If generic_segments is empty, lower_generic_args won't iterate over params
+   - Need to check: does probe_generic_path_segments correctly return GenericPathSegment for a bare function path like `identity`?
+
+**2. `lower_generic_args` exists but inferred_kind callback isn't triggered**
+   - If the path has explicit generic args `identity::<T, A>()`, those go through `provided_kind`, not `inferred_kind`
+   - For bare paths, should use `inferred_kind`, but might be skipping it somehow
+
+**3. The function def_id isn't being treated as having TypeCtor params**
+   - Even if generic segments are identified, if TypeCtor params aren't in the generics_of() result, they won't be iterated over
+   - Or if has_generics check filters them out
+
+### Evidence Trail
+
+From test output (effects-system.stderr):
+```
+ctor_for_param: ctor=CtorArg(Param(F/#0)), arg=A/#1
+  -> ctor is param: F/#0, args=[CtorArg(Known(CtorDef { def_id: DefId(0:4 ~ effects_system[9a03]::identity::F), args: [] })), ?2t]
 ```
 
-Fresh args contain `Known(CtorDef { def_id: identity::F, ... })` instead of `Var(?c)`.
+The signature has `Param(F/#0)`. When it's looked up in fresh args at index 0, we get `Known(CtorDef { def_id: identity::F })`. This comes from `GenericArgs::extend_with_error` (generic_args.rs:545-557):
 
-### Root Cause Analysis
+```rust
+pub fn extend_with_error(...) -> GenericArgsRef<'tcx> {
+    ty::GenericArgs::for_item(tcx, def_id, |def, _| {
+        if let Some(arg) = original_args.get(def.index as usize) {
+            *arg
+        } else {
+            def.to_error(tcx)  // <-- Creates dummy Known(CtorDef)
+        }
+    })
+}
+```
 
-The `Known(CtorDef)` with param's own def_id is created by error recovery in `GenericParamDef::to_error()` (rustc_middle/src/ty/generics.rs:108). This happens when `extend_with_error()` is called to fill missing ctor args in fresh args.
-
-**Why are ctor args missing?**
-- `instantiate_binder_with_fresh_vars` creates fresh vars for late-bound variables
-- If ctor params are early-bound (stored as `Param(F)` not `Bound(BoundCtor)`), no fresh ctor var is created
-- When extending args, ctor param slot is missing, triggering error recovery
-
-**Why are ctor params early-bound?**
-- `try_lower_ctor_param_use` is supposed to create `Ctor(Bound(BoundCtor), arg_ty)` types during signature lowering
-- But this function is **never being called** (verified: no output when added eprintln)
-- Either the function doesn't detect it should handle ctor params, or parameter types aren't going through that code path
-
-### Control Flow Investigation
-
-Traced function signature lowering:
-1. `fn_sig` query (collect.rs:970) → calls `lower_fn_sig_recovering_infer_ret_ty`
-2. → calls `icx.lowerer().lower_fn_ty(...)`
-3. → calls `lower_fn_sig(...)` (line 3544)
-4. → impl in collect.rs:528 iterates over `decl.inputs` and calls `self.lowerer().lower_ty(a)` for each
-
-**Added eprintln to confirm:**
-- `HirTyLowerer::lower_ty` (line 3039) — **NOT CALLED** (0 times)
-- `lower_resolved_ty_path` (line 2175) — **NOT CALLED**  
-- `Res::Def(DefKind::TyParam, ...)` path — **NOT CALLED**
-- `try_lower_ctor_param_use` — **NOT CALLED**
-
-**Conclusion**: Signature parameter types are **not** being lowered through the normal `lower_ty` pipeline during signature collection.
-
-### Hypothesis
-
-Either:
-1. Signature types are NOT lowered at collection time (just stored as HIR), lowering happens later during type-checking
-2. There's a different lowering path for function signatures that bypasses `lower_ty`
-3. The `ItemCtxt::lower_ty` (collect.rs:246) that delegates to `self.lowerer().lower_ty()` is somehow not actually calling the trait method
+So the ctor param slot is **missing from original_args**, which means `instantiate_value_path` didn't create a fresh ctor var for it.
 
 ### Next Steps
 
-1. **Verify when signature types are lowered**: Add eprintln to `collect.rs:552` (where `self.lowerer().lower_ty(a)` is called) to confirm if signature lowering is even being executed
-2. **Check type-checking phase**: Signatures might be lowered during type-checking (`rustc_hir_typeck`), not collection
-3. **Trace the actual impl**: Determine which `lower_ty` method is actually being called by the `self.lowerer().lower_ty()` delegatio chain
+1. **Check probe_generic_path_segments**: Does it return a GenericPathSegment for bare function paths? Trace the resolution to see if `identity` is being recognized as having generic parameters.
 
-### Files Modified (Session 25)
+2. **Check lower_generic_args call site**: At fn_ctxt/_impl.rs:1323-1337, verify that:
+   - `generic_segments` is non-empty
+   - The segments include all function generics, including TypeCtor params
+   - `inferred_kind` is being called for at least some params
 
-- `compiler/rustc_hir_analysis/src/hir_ty_lowering/mod.rs`: 
-  - Fixed `try_lower_ctor_param_use` signature to accept `hir_id` parameter
-  - Changed from `last_seg.hir_id` back to correct HIR ID source
-  - Added diagnostic output (now removed)
+3. **Check if TypeCtor params are being filtered**: Look at has_generics or similar checks that might exclude TypeCtor params from being considered "generic".
 
-### Key Insight
+4. **Instrument lower_generic_args**: Add eprintln to see which params are being iterated and which branch (provided_kind vs inferred_kind) is taken for each.
 
-The Session 24 infrastructure (bound ctor instantiation in `instantiate_binder_with_fresh_vars`) is correct. The blocker is **not** in fresh var creation — it's in whether ctor params ever reach the code that marks them as bound in the first place.
+### Files to Check Next Session
 
-If `try_lower_ctor_param_use` is never called, ctor params are never converted to `Ctor` types with bound/param ctor args. They stay as regular `Param(F)` types. Then when fresh args are created, there's nothing to instantiate, and error recovery creates dummy `Known(CtorDef)` values.
-
-The fix is to ensure ctor param application syntax (`F<A>`) goes through `try_lower_ctor_param_use` during signature lowering.
+- `compiler/rustc_hir_analysis/src/hir_ty_lowering/mod.rs:2046` - `probe_generic_path_segments`
+- `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs` - Generic arg lowering logic
+- `compiler/rustc_hir_typeck/src/fn_ctxt/_impl.rs:1236-1320` - `CtorGenericArgsCtxt` and callback impl
