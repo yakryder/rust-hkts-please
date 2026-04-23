@@ -964,10 +964,9 @@ impl<'tcx> InferCtxt<'tcx> {
 
     /// Given a set of generics defined on a type or impl, returns the generic parameters mapping
     /// each type/region parameter to a fresh inference variable.
+    #[instrument(level = "debug", skip(self), ret)]
     pub fn fresh_args_for_item(&self, span: Span, def_id: DefId) -> GenericArgsRef<'tcx> {
-        let args = GenericArgs::for_item(self.tcx, def_id, |param, _| self.var_for_def(span, param));
-        debug!(?def_id, ?args, "fresh_args_for_item");
-        args
+        GenericArgs::for_item(self.tcx, def_id, |param, _| self.var_for_def(span, param))
     }
 
     /// Returns `true` if errors have been reported since this infcx was

@@ -355,8 +355,8 @@ impl<'a, 'tcx> Lift<TyCtxt<'tcx>> for GenericArg<'a> {
                 // Lift CtorArg: concrete ctors are lifted by lifting their args,
                 // but inference variables and parameters cannot be lifted (they're context-dependent).
                 match ctor.kind() {
-                    ty::CtorArgKind::Param(_) => {
-                        // Parameters are context-dependent and cannot be lifted
+                    ty::CtorArgKind::Param(_) | ty::CtorArgKind::Bound(_) => {
+                        // Parameters (early and late-bound) are context-dependent and cannot be lifted
                         None
                     }
                     ty::CtorArgKind::Known(ctor_def) => {

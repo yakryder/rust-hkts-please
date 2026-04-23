@@ -2365,8 +2365,29 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
         let [hir::GenericArg::Type(arg_ty)] = hir_args.args else {
             return None;
         };
-        let param_ctor = ty::ParamCtor::for_def(param_def);
-        let ctor_arg = tcx.mk_ctor_arg(ty::CtorArgKind::Param(param_ctor));
+
+        // Check if this is a late-bound ctor parameter (like early/late-bound type params)
+        let path_hir_id = path.hir_id;
+        let ctor_arg = match tcx.named_bound_var(path_hir_id) {
+            Some(rbv::ResolvedArg::LateBound(debruijn, index, _)) => {
+                let br = ty::BoundCtor {
+                    var: ty::BoundVar::from_u32(index),
+                    kind: ty::BoundCtorKind::Param(def_id.to_def_id()),
+                };
+                tcx.mk_ctor_arg(ty::CtorArgKind::Bound(br))
+            }
+            Some(rbv::ResolvedArg::EarlyBound(_)) => {
+                let param_ctor = ty::ParamCtor::for_def(param_def);
+                tcx.mk_ctor_arg(ty::CtorArgKind::Param(param_ctor))
+            }
+            Some(rbv::ResolvedArg::Error(guar)) => {
+                return Some(Ty::new_error(tcx, guar));
+            }
+            arg => {
+                bug!("unexpected bound var resolution for {:?}: {arg:?}", path_hir_id)
+            }
+        };
+
         let arg = self.lower_ty(arg_ty.as_unambig_ty());
         Some(Ty::new_ctor(tcx, ctor_arg, arg))
     }

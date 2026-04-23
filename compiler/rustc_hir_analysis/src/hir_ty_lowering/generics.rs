@@ -382,7 +382,10 @@ pub fn lower_generic_args<'tcx: 'a, 'a>(
                 (None, Some(&param)) => {
                     // If there are fewer arguments than parameters, it means
                     // we're inferring the remaining arguments.
-                    args.push(ctx.inferred_kind(&args, param, infer_args));
+                    debug!(?param.kind, ?infer_args, "inferring kind for param");
+                    let inferred = ctx.inferred_kind(&args, param, infer_args);
+                    debug!(?inferred, "inferred kind");
+                    args.push(inferred);
                     params.next();
                 }
 

@@ -787,6 +787,14 @@ pub trait PrettyPrinter<'tcx>: Printer<'tcx> + fmt::Write {
             ty::Ctor(ctor, inner_ty) => {
                 match ctor.kind() {
                     ty::CtorArgKind::Param(param_ctor) => write!(self, "{}", param_ctor.name)?,
+                    ty::CtorArgKind::Bound(bound_ctor) => match bound_ctor.kind {
+                        ty::BoundCtorKind::Anon => {
+                            rustc_type_ir::debug_bound_var(self, ty::BoundVarIndexKind::Bound(ty::INNERMOST), bound_ctor.var)?
+                        }
+                        ty::BoundCtorKind::Param(def_id) => {
+                            write!(self, "{}", self.tcx().item_name(def_id))?
+                        }
+                    },
                     ty::CtorArgKind::Var(vid) => write!(self, "{:?}", vid)?,
                     ty::CtorArgKind::Known(def) => {
                         let name = self.tcx().def_path_str(def.def_id);
@@ -3401,6 +3409,16 @@ define_print_and_forward_display! {
                 match ctor.kind() {
                     ty::CtorArgKind::Param(param_ctor) => {
                         write!(p, "{}", param_ctor.name)?;
+                    }
+                    ty::CtorArgKind::Bound(bound_ctor) => {
+                        match bound_ctor.kind {
+                            ty::BoundCtorKind::Anon => {
+                                rustc_type_ir::debug_bound_var(p, ty::BoundVarIndexKind::Bound(ty::INNERMOST), bound_ctor.var)?
+                            }
+                            ty::BoundCtorKind::Param(def_id) => {
+                                p.print_def_path(def_id, &[])?;
+                            }
+                        }
                     }
                     ty::CtorArgKind::Known(ctor_def) => {
                         p.print_def_path(ctor_def.def_id, &[])?;

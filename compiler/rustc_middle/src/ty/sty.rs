@@ -47,6 +47,7 @@ pub type PlaceholderType<'tcx> = ir::PlaceholderType<TyCtxt<'tcx>>;
 pub type PlaceholderConst<'tcx> = ir::PlaceholderConst<TyCtxt<'tcx>>;
 pub type BoundTy<'tcx> = ir::BoundTy<TyCtxt<'tcx>>;
 pub type BoundConst<'tcx> = ir::BoundConst<TyCtxt<'tcx>>;
+pub type BoundCtor<'tcx> = ir::BoundCtor<TyCtxt<'tcx>>;
 pub type BoundRegion<'tcx> = ir::BoundRegion<TyCtxt<'tcx>>;
 pub type BoundVariableKind<'tcx> = ir::BoundVariableKind<TyCtxt<'tcx>>;
 pub type BoundRegionKind<'tcx> = ir::BoundRegionKind<TyCtxt<'tcx>>;
@@ -342,8 +343,11 @@ pub struct CtorDef<'tcx> {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable)]
 pub enum CtorArgKind<'tcx> {
     /// A reference to a type constructor parameter (e.g., `F` in `fn<F<_>>`).
-    /// Used before the parameter is instantiated.
+    /// Used before the parameter is instantiated (early-bound).
     Param(ParamCtor),
+    /// A late-bound type constructor parameter (e.g., in `for<F<_>> ...`).
+    /// Stored with debruijn index and bound variable.
+    Bound(ty::BoundCtor<TyCtxt<'tcx>>),
     /// A concrete type constructor, e.g. `Option`, `Result<i32, _>`.
     Known(CtorDef<'tcx>),
     /// An inference variable for a type constructor.
@@ -386,14 +390,18 @@ impl<'a, 'tcx> rustc_data_structures::stable_hasher::HashStable<crate::ich::Stab
                 0u8.hash_stable(hcx, hasher);
                 param_ctor.hash_stable(hcx, hasher);
             }
-            CtorArgKind::Known(ctor_def) => {
+            CtorArgKind::Bound(bound_ctor) => {
                 1u8.hash_stable(hcx, hasher);
+                bound_ctor.hash_stable(hcx, hasher);
+            }
+            CtorArgKind::Known(ctor_def) => {
+                2u8.hash_stable(hcx, hasher);
                 ctor_def.hash_stable(hcx, hasher);
             }
             CtorArgKind::Var(_) => {
                 // Inference variables can't be stably hashed, so just hash the discriminant.
                 // This is consistent with how Ty handles TyVid.
-                2u8.hash_stable(hcx, hasher);
+                3u8.hash_stable(hcx, hasher);
             }
         }
     }

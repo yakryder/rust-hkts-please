@@ -1318,6 +1318,46 @@ impl<I: Interner> BoundConst<I> {
     }
 }
 
+#[derive_where(Clone, Copy, PartialEq, Eq, Hash; I: Interner)]
+#[cfg_attr(
+    feature = "nightly",
+    derive(Encodable_NoContext, Decodable_NoContext, HashStable_NoContext)
+)]
+pub struct BoundCtor<I: Interner> {
+    pub var: ty::BoundVar,
+    pub kind: BoundCtorKind<I>,
+}
+
+impl<I: Interner, U: Interner> Lift<U> for BoundCtor<I>
+where
+    BoundCtorKind<I>: Lift<U, Lifted = BoundCtorKind<U>>,
+{
+    type Lifted = BoundCtor<U>;
+
+    fn lift_to_interner(self, cx: U) -> Option<Self::Lifted> {
+        Some(BoundCtor { var: self.var, kind: self.kind.lift_to_interner(cx)? })
+    }
+}
+
+impl<I: Interner> fmt::Debug for BoundCtor<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            BoundCtorKind::Anon => write!(f, "{:?}", self.var),
+            BoundCtorKind::Param(def_id) => write!(f, "{def_id:?}"),
+        }
+    }
+}
+
+impl<I: Interner> BoundCtor<I> {
+    pub fn var(self) -> ty::BoundVar {
+        self.var
+    }
+
+    pub fn assert_eq(self, var: BoundVariableKind<I>) {
+        assert_eq!(self.kind, var.expect_ctor())
+    }
+}
+
 pub type PlaceholderConst<I> = ty::Placeholder<I, BoundConst<I>>;
 
 impl<I: Interner> PlaceholderConst<I> {
