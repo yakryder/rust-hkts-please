@@ -7,7 +7,7 @@ fn identity<F<_>, A>(x: F<A>) -> F<A> { x }
 identity(Some(42): Option<i32>)  // F = Option, A = i32 → Some(42)
 ```
 
-**Status (Session 20)**: Bound variable infrastructure added; fresh ctor vars created in instantiate; error persists: fresh_args still shows `Known(identity::F)` instead of `Var(?c)`. **Next**: verify BoundVariableKind::Ctor is emitted during lowering.
+**Status (Session 23)**: Late-bound ctor param representation fixed. Signatures now correctly store late-bound ctor params as `Bound(BoundCtor)` instead of `Param(F)`. Next: ensure `instantiate_binder_with_fresh_vars` correctly instantiates `BoundVariableKind::Ctor` variants to fresh `Var(?c)`.
 
 ---
 
@@ -54,16 +54,26 @@ A type constructor application: `F<A>` is represented as `Ctor(ctor_arg, arg_ty)
 
 ```rust
 pub enum CtorArgKind<'tcx> {
-    Param(ParamCtor),         // uninstantiated ctor param, e.g. F in fn<F<_>>
-    Known(CtorDef<'tcx>),     // concrete ctor, e.g. Option
-    Var(CtorVid),             // inference variable for a ctor
+    Param(ParamCtor),              // early-bound ctor param, e.g. F in fn<F<_>>
+    Bound(BoundCtor<'tcx>),        // late-bound ctor param (Session 23 addition)
+    Known(CtorDef<'tcx>),          // concrete ctor, e.g. Option
+    Var(CtorVid),                  // inference variable for a ctor
+}
+
+pub struct BoundCtor<'tcx> {       // mirrors BoundTy/BoundConst (Session 23)
+    pub var: BoundVar,
+    pub kind: BoundCtorKind,       // Anon or Param(DefId)
 }
 
 pub struct CtorDef<'tcx> {
-    pub def_id: DefId,        // e.g. Option's DefId
-    pub args: GenericArgsRef<'tcx>,  // pre-bound args (for partial application)
+    pub def_id: DefId,             // e.g. Option's DefId
+    pub args: GenericArgsRef<'tcx>, // pre-bound args (for partial application)
 }
 ```
+
+**Session 23 Key Insight**: Early vs Late-bound distinction matters for ctor params too:
+- **Early-bound**: `Param(F)` — parameter index is known at signature collection time
+- **Late-bound**: `Bound(BoundCtor{var, kind})` — debruijn index + bound var, resolved during instantiation
 
 ### `GenericArgKind::Ctor(CtorArg)`
 
@@ -74,10 +84,13 @@ A fourth kind of generic argument, alongside Type/Lifetime/Const. When calling `
 ```rust
 fn apply_ctor(self, ctor: CtorArg, arg: Ty) -> Ty;
     // apply_ctor(Known(Option), i32) → Option<i32>
+    // Param and Bound are bugs if reached (should be instantiated first)
 fn ctor_is_identity(self, ctor: CtorArg) -> bool;
-    // true for Param and Var (unresolved); false for concrete Known ctors
+    // true for Param, Bound, and Var (unresolved); false for concrete Known ctors
 fn ctor_as_infer_var(self, ctor: CtorArg) -> Option<CtorVid>;
+    // Some(vid) for Var only; None for Param, Bound, Known
 fn ctor_arg_as_param(self, ctor: CtorArg) -> Option<ParamCtor>;
+    // Some for Param only; None for Bound (bound vars aren't params)
 fn ctor_arg_is_param(ctor: CtorArg) -> bool;
 fn mk_ty_ctor(self, ctor_arg: CtorArg, arg: Ty) -> Ty;
 fn decompose_ctor_application(self, ty: Ty) -> Option<(CtorArg, Ty)>;

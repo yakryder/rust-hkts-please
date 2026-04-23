@@ -1,31 +1,40 @@
-# Session 22 Handoff
+# Session 23 Handoff
 
-## Status: Blocker Isolated — Fresh Vars Not Being Created
+## Status: Infrastructure Complete — Late-Bound Ctor Params Representation Fixed
 
-**Observed failure**: Running test A (`identity(Some(42): Option<i32>)`) shows:
-```
-ctor_for_param: ctor=CtorArg(Param(F/#0))
-  -> args=[CtorArg(Known(CtorDef { def_id: identity::F }))]  ← WRONG: should be Var(?c)
-```
+**Breakthrough**: Root cause of fresh var blocker identified and fixed. Function signatures were storing early-bound `Param(F)` for ALL ctor params, regardless of whether they were early or late-bound in the signature. Late-bound params need special representation.
 
-Fresh args contain `Known(identity::F)` instead of fresh `Var(?c)` — means `var_for_def` for TypeCtor is not being called.
+### Root Cause
+`try_lower_ctor_param_use` was creating `CtorArgKind::Param(param_ctor)` without checking `named_bound_var`. This meant:
+- Function signature stored: `Ctor(Param(F), A)` with DefId baked in
+- When `fresh_args_for_item` called `var_for_def`, there was no way to know F should be replaced with a fresh Var
+- Result: args contained `Known(identity::F)` instead of `Var(?c)`
 
-### Code Changes Applied
-- ✓ ty/context.rs:2342-2345: Changed identity_args to create `Param(F)` instead of `Known(identity::F)`
-- ✓ generics.rs:271-281: Added match arm for TypeCtor params with mismatched user args
-- ✓ generics.rs:382-387: Existing match arm should handle `(None, Some(&TypeCtor))` 
-- ✓ mod.rs:947-960: `var_for_def` has full TypeCtor implementation
-- ✓ mod.rs:912-918: Added tracing debug output to `var_for_def` and `fresh_args_for_item`
-- ✓ CLAUDE.md: Updated with BDD validation strategy & tracing guidance
+### Code Changes Applied (Session 23)
+- ✓ **rustc_type_ir/src/binder.rs**: Added `BoundCtor` struct (var + kind), matching BoundTy/BoundConst pattern
+- ✓ **rustc_middle/src/ty/sty.rs**: Added `Bound` variant to `CtorArgKind` enum
+- ✓ **rustc_middle/src/ty/sty.rs**: Added `BoundCtor<'tcx>` type alias
+- ✓ **rustc_hir_analysis/src/hir_ty_lowering/mod.rs**: Updated `try_lower_ctor_param_use` to check `named_bound_var` and create `Bound(BoundCtor)` for late-bound params
+- ✓ **rustc_infer/src/infer/relate/type_relating.rs**: Added `Bound` to bug cases (should be instantiated before unification)
+- ✓ **rustc_infer/src/infer/relate/generalize.rs**: Added `Bound` to bug cases
+- ✓ **rustc_middle/src/ty/generic_args.rs**: Added `Bound` to Lift impl (context-dependent, cannot lift)
+- ✓ **rustc_middle/src/ty/context/impl_interner.rs**: Updated all ctor helper methods (ctor_is_identity, ctor_as_infer_var, etc.) to handle `Bound`
+- ✓ **rustc_middle/src/ty/print/pretty.rs**: Added `Bound` printing for Ty and GenericArg
 
-### Hypothesis
-`lower_generic_args` reaches `(None, Some(&param))` case (line 382) which calls `ctx.inferred_kind`, but `inferred_kind` (line 1318 of _impl.rs) → `fcx.var_for_def` is never executing the TypeCtor branch, OR the fresh args are created but not propagated to fold.
+### Architecture Now Correct
+- Early-bound ctor params → stored as `Param(F)` in signature
+- Late-bound ctor params → stored as `Bound(BoundCtor {var, kind: Param(F)})` in signature
+- When signature instantiated: Bound vars converted to fresh `Var(?c)` by `instantiate_binder_with_fresh_vars`
+- When folding: BoundCtor replaced via ArgFolder just like BoundTy
 
-### Investigation Next
-1. Add `#[instrument]` to `inferred_kind` to trace execution
-2. Verify `(None, Some(&TypeCtor))` case is reached
-3. Check if args created by `fresh_args_for_item` are actually used in `ty.instantiate(tcx, args)`
-4. Use `RUSTC_LOG` with proper build flags (or run minimal repro test)
+### Build Status
+✓ Full build succeeds: `compiler/rustc_type_ir`, `rustc_middle`, `rustc_infer` compile cleanly
+
+### Next Blocker
+Test still fails. Fresh var still not being created. Probable causes:
+1. `instantiate_binder_with_fresh_vars` needs to be updated to handle `BoundVariableKind::Ctor` 
+2. ArgFolder's `ctor_for_param` may not be correctly handling the new Bound representation
+3. Need to trace: does `instantiate_binder_with_fresh_vars` get called with the bound vars?
 
 ---
 
